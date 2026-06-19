@@ -5,7 +5,7 @@ import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, ReferenceLine, Cell,
 } from "recharts";
-import { TrendingUp, TrendingDown, LayoutDashboard, CalendarDays, Receipt, Wallet, RefreshCw } from "lucide-react";
+import { TrendingUp, TrendingDown, LayoutDashboard, CalendarDays, Receipt, Wallet, RefreshCw, Upload, Trash2 } from "lucide-react";
 
 const eur = (n: number) => new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR" }).format(n || 0);
 const numf = (n: number, d = 2) => new Intl.NumberFormat("nl-NL", { minimumFractionDigits: d, maximumFractionDigits: d }).format(n || 0);
@@ -23,18 +23,41 @@ function rangeFor(period: string) {
   return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
 }
 
+function lastMonths(n: number) {
+  const out: any[] = [];
+  const d = new Date();
+  for (let i = 0; i < n; i++) {
+    const y = d.getFullYear(), m = d.getMonth();
+    const first = new Date(y, m, 1), last = new Date(y, m + 1, 0);
+    out.push({
+      val: `${y}-${String(m + 1).padStart(2, "0")}`,
+      label: first.toLocaleDateString("nl-NL", { month: "long", year: "numeric" }),
+      from: `${y}-${String(m + 1).padStart(2, "0")}-01`,
+      to: last.toISOString().slice(0, 10),
+    });
+    d.setMonth(d.getMonth() - 1);
+  }
+  return out;
+}
+const MONTHS = lastMonths(12);
+
 export default function Dashboard() {
   const [tab, setTab] = useState("overzicht");
   const [period, setPeriod] = useState("maand");
+  const [fromInput, setFromInput] = useState("");
+  const [toInput, setToInput] = useState("");
+  const [monthSel, setMonthSel] = useState("");
   const [pl, setPl] = useState<any>(null);
   const [data, setData] = useState<any>({ expenses: [], liquid: [], openInvoices: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const getRange = () => (fromInput && toInput ? { from: fromInput, to: toInput } : rangeFor(period));
+
   const load = async () => {
     setLoading(true); setError(null);
     try {
-      const { from, to } = rangeFor(period);
+      const { from, to } = getRange();
       const [r1, r2] = await Promise.all([
         fetch(`/api/pl?from=${from}&to=${to}`).then((r) => r.json()),
         fetch(`/api/data`).then((r) => r.json()),
@@ -45,7 +68,15 @@ export default function Dashboard() {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [period]);
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [period, fromInput, toInput]);
+
+  const pickQuick = (v: string) => { setFromInput(""); setToInput(""); setMonthSel(""); setPeriod(v); };
+  const pickMonth = (val: string) => {
+    setMonthSel(val);
+    const m = MONTHS.find((x) => x.val === val);
+    if (m) { setFromInput(m.from); setToInput(m.to); }
+  };
+  const custom = !!(fromInput && toInput);
 
   const days = pl?.days || [];
   const totals = pl?.totals || {};
@@ -110,6 +141,7 @@ export default function Dashboard() {
           ["pl", "Dagelijkse P&L", CalendarDays],
           ["uitgaves", "Uitgaves", Receipt],
           ["balans", "Balans", Wallet],
+          ["import", "Importeren", Upload],
         ].map(([k, label, Icon]: any) => (
           <button key={k} className={`tab ${tab === k ? "on" : ""}`} onClick={() => setTab(k)}>
             <Icon size={16} /> {label}
@@ -119,16 +151,30 @@ export default function Dashboard() {
 
       <main className="main">
         <div className="row-between">
-          <h2 className="h2">{tab === "overzicht" ? "Overzicht" : tab === "pl" ? "Dagelijkse P&L" : tab === "uitgaves" ? "Uitgaves" : "Balans"}</h2>
-          <div className="seg">
-            {[["vandaag", "Vandaag"], ["week", "Week"], ["maand", "30d"], ["kwartaal", "90d"]].map(([v, l]) => (
-              <button key={v} className={period === v ? "on" : ""} onClick={() => setPeriod(v)}>{l}</button>
-            ))}
-          </div>
+          <h2 className="h2">{tab === "overzicht" ? "Overzicht" : tab === "pl" ? "Dagelijkse P&L" : tab === "uitgaves" ? "Uitgaves" : tab === "balans" ? "Balans" : "Importeren"}</h2>
+          {tab !== "import" && (
+            <div className="ctrls">
+              <div className="seg">
+                {[["vandaag", "Vandaag"], ["week", "Week"], ["maand", "30d"], ["kwartaal", "90d"]].map(([v, l]) => (
+                  <button key={v} className={!custom && period === v ? "on" : ""} onClick={() => pickQuick(v)}>{l}</button>
+                ))}
+              </div>
+              <select className="msel" value={monthSel} onChange={(e) => pickMonth(e.target.value)}>
+                <option value="">Maand…</option>
+                {MONTHS.map((m) => <option key={m.val} value={m.val}>{m.label}</option>)}
+              </select>
+              <input className="dinp" type="date" value={fromInput} onChange={(e) => { setMonthSel(""); setFromInput(e.target.value); }} />
+              <span className="dim">→</span>
+              <input className="dinp" type="date" value={toInput} onChange={(e) => { setMonthSel(""); setToInput(e.target.value); }} />
+            </div>
+          )}
         </div>
+        {pl && tab !== "import" && (
+          <div className="rangelbl dim">Periode: {ddmmyyyy(pl.range.from)} – {ddmmyyyy(pl.range.to)}</div>
+        )}
 
-        {error && <div className="banner err">Fout: {error}. Check je env vars (SHOPIFY_STORE_DOMAIN / SHOPIFY_ADMIN_TOKEN) in Vercel.</div>}
-        {loading && <div className="loading">Orders ophalen uit Shopify…</div>}
+        {error && tab !== "import" && <div className="banner err">Fout: {error}. Check je env vars in Railway.</div>}
+        {loading && tab !== "import" && <div className="loading">Data ophalen…</div>}
 
         {!loading && !error && pl && (
           <>
@@ -283,16 +329,17 @@ export default function Dashboard() {
             )}
 
             {tab === "uitgaves" && (
-              <Card title="Uitgaves" subtitle="uit expenses.json">
+              <Card title="Uitgaves" subtitle={`${(data.expenses || []).length} regels${data.importedCount ? ` · ${data.importedCount} geïmporteerd` : ""}`}>
                 <div className="table-wrap">
                   <table className="table">
-                    <thead><tr><th>Datum</th><th>Omschrijving</th><th>Methode</th><th className="r">Bedrag</th></tr></thead>
+                    <thead><tr><th>Datum</th><th>Omschrijving</th><th>Categorie</th><th>Methode</th><th className="r">Bedrag</th></tr></thead>
                     <tbody>
-                      {(data.expenses || []).length === 0 && <tr><td colSpan={4} className="dim center">Geen uitgaves.</td></tr>}
-                      {(data.expenses || []).map((e: any, i: number) => (
+                      {(data.expenses || []).length === 0 && <tr><td colSpan={5} className="dim center">Geen uitgaves.</td></tr>}
+                      {[...(data.expenses || [])].sort((a: any, b: any) => (b.date || "").localeCompare(a.date || "")).map((e: any, i: number) => (
                         <tr key={i}>
-                          <td className="nowrap">{ddmmyyyy(e.date)}</td>
+                          <td className="nowrap">{e.date ? ddmmyyyy(e.date) : "—"}</td>
                           <td>{e.omschrijving}</td>
+                          <td className="dim">{e.category || "—"}</td>
                           <td className="dim">{e.methode}</td>
                           <td className="r mono strong">{eur(e.bedrag)}</td>
                         </tr>
@@ -327,8 +374,101 @@ export default function Dashboard() {
             )}
           </>
         )}
+
+        {tab === "import" && <ImportPanel onDone={load} />}
       </main>
     </div>
+  );
+}
+
+function ImportPanel({ onDone }: any) {
+  const [busy, setBusy] = useState(false);
+  const [res, setRes] = useState<any>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [source, setSource] = useState("rabobank");
+
+  const SOURCE_OPTIONS = [
+    ["rabobank", "Rabobank"],
+    ["wise", "Wise"],
+    ["revolut", "Revolut"],
+    ["rabo_cc", "Rabo creditcard"],
+    ["amex", "American Express"],
+    ["paypal", "PayPal"],
+    ["anders", "Anders"],
+  ];
+
+  const upload = async (file: File) => {
+    setBusy(true); setErr(null); setRes(null);
+    try {
+      const text = await file.text();
+      const r = await fetch(`/api/import?source=${source}`, { method: "POST", headers: { "Content-Type": "text/plain" }, body: text }).then((x) => x.json());
+      if (!r.ok) throw new Error(r.error || "Import mislukt");
+      setRes(r);
+      onDone && onDone();
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  };
+
+  const reset = async () => {
+    if (!confirm("Alle geïmporteerde uitgaves verwijderen?")) return;
+    setBusy(true);
+    try { await fetch("/api/import", { method: "DELETE" }); setRes(null); onDone && onDone(); } finally { setBusy(false); }
+  };
+
+  return (
+    <>
+      <Card title="Bankafschrift importeren" subtitle="bank · creditcard · PayPal">
+        <p className="muted" style={{ marginTop: 0 }}>
+          Kies de bron, exporteer daar je transacties als <b>CSV</b> en sleep het bestand hierheen. De app houdt alleen <b>uitgaven</b> over,
+          gooit automatisch weg wat al elders meetelt (NicheBay = COGS, Google/Meta = ad spend) en alle inkomende bedragen, en categoriseert de rest.
+          Dubbele regels worden overgeslagen, dus je kunt elke maand veilig opnieuw uploaden.
+        </p>
+        <div className="ctrls" style={{ marginBottom: 12 }}>
+          <span className="dim" style={{ fontSize: 13 }}>Bron:</span>
+          <select className="msel" value={source} onChange={(e) => setSource(e.target.value)}>
+            {SOURCE_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        </div>
+        <label className="dropzone">
+          <input type="file" accept=".csv,text/csv" style={{ display: "none" }}
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(f); e.target.value = ""; }} />
+          <Upload size={22} />
+          <span>{busy ? "Bezig met verwerken…" : "Kies of sleep je CSV-bestand"}</span>
+        </label>
+        {err && <div className="banner err" style={{ marginTop: 12 }}>{err}</div>}
+        {res?.note && <div className="banner warn" style={{ marginTop: 12 }}>{res.note}</div>}
+      </Card>
+
+      {res && (
+        <Card title="Resultaat" subtitle={`${res.source || ""}${res.persisted ? " · opgeslagen" : " · niet opgeslagen"}`}>
+          <div className="kpis" style={{ marginBottom: 14 }}>
+            <Kpi label="Uitgaven herkend" value={String(res.parsed)} />
+            <Kpi label="Nieuw opgeslagen" value={String(res.saved)} tone="up" />
+            <Kpi label="Dubbel (overgeslagen)" value={String(res.duplicates)} />
+            <Kpi label="Uitgesloten (al geteld)" value={String(res.stats?.excluded ?? 0)} tone="down" />
+            <Kpi label="Inkomend (genegeerd)" value={String(res.stats?.income ?? 0)} />
+          </div>
+          {res.preview?.length > 0 && (
+            <div className="table-wrap">
+              <table className="table">
+                <thead><tr><th>Datum</th><th>Omschrijving</th><th>Categorie</th><th className="r">Bedrag</th></tr></thead>
+                <tbody>
+                  {res.preview.map((e: any, i: number) => (
+                    <tr key={i}>
+                      <td className="nowrap">{ddmmyyyy(e.date)}</td>
+                      <td>{e.omschrijving}</td>
+                      <td className="dim">{e.category}</td>
+                      <td className="r mono strong">{eur(e.bedrag)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <button className="resetbtn" onClick={reset} disabled={busy}><Trash2 size={14} /> Geïmporteerde uitgaves wissen</button>
+        </Card>
+      )}
+    </>
   );
 }
 

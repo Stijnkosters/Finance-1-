@@ -92,10 +92,25 @@ In plaats van `costs.json` handmatig in te vullen, haalt de app de kostprijs per
 
 > Base URL: `https://dashboard-admin.nichebay.com/api/open/v1` · Auth: `Authorization: Bearer sk_...`. Orders zonder NicheBay-kost (SD-kaart, cadeaukaart) vallen terug op `costs.json`.
 
-## Later automatiseren (geen handwerk meer)
-- **Ad spend** → Make/n8n-flow die dagelijks Google Ads + Meta-spend naar `adspend.json` (of een DB) schrijft.
-- **Inkoopprijzen** → als je leverancier een API/prijsfeed heeft, laat die `costs.json` updaten.
-- **Overhead** → bank-API's (Wise/Revolut/Bunq) → `expenses.json` met keyword-regels.
+## Bankuitgaves importeren (Rabobank zakelijk)
+
+Overhead (tools, boekhouder, team, verzending) komt uit je bankafschrift. Je uploadt 1× per maand een CSV; de app bewaart het.
+
+**Eenmalig: opslag aanzetten (Railway Volume)**
+1. Railway → je service → **Settings → Volumes → New Volume**, mount-pad bijv. `/data-store`.
+2. Railway → **Variables** → `DATA_DIR` = `/data-store`.
+3. Redeploy. (Zonder volume wordt een import niet bewaard.)
+
+**Elke maand:**
+1. Rabobank → exporteer je transacties als **CSV**.
+2. App → tab **Importeren** → sleep het bestand erin.
+3. De app houdt alleen **uitgaven** over, sluit automatisch uit wat al elders meetelt (NicheBay = COGS, Google/Meta/TikTok = ad spend) en alle inkomende bedragen, categoriseert de rest, en slaat dubbele regels over. Je ziet een overzicht: herkend / opgeslagen / dubbel / uitgesloten.
+
+Werken de kolommen niet? Stuur één voorbeeldregel uit je CSV, dan stem ik de parser af.
+
+## Datum-selectie
+
+Op elk tabblad kun je rechtsboven kiezen: **Vandaag / Week / 30d / 90d**, een **maand** uit de dropdown, of een **eigen periode** met de twee datumvelden (van → tot).
 
 ## Let op
 - Shopify-fees zijn een **schatting** (`FEE_RATE`/`FEE_FIXED`). Voor exacte fees is de Shopify Payments balance-API nodig (extra scope) — kan later.

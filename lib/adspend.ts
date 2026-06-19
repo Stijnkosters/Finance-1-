@@ -21,7 +21,7 @@ async function fetchFromSheet(): Promise<Record<string, number>> {
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
   if (!lines.length) return {};
   const header = lines[0].split(",").map((h) => h.trim().toLowerCase().replace(/"/g, ""));
-  let di = header.findIndex((h) => /date|datum/.test(h));
+  let di = header.findIndex((h) => /date|datum|day/.test(h));
   let ci = header.findIndex((h) => /cost|spend|kosten|bedrag/.test(h));
   let start = 1;
   if (di === -1 || ci === -1) { di = 0; ci = 1; start = normalizeDate(header[0]) ? 0 : 1; }
