@@ -66,31 +66,59 @@ export async function GET() {
   const liabTotal = Math.round(sum(liabilities) * 100) / 100;
   const netNow = Math.round((assetsTotal - liabTotal) * 100) / 100;
 
-  // rekeningen mét maandhistorie (uit CSV) vs zonder (handmatig, vlak doorgetrokken)
+  const cf = await readJson("cashflow-history.json", {});
   const histSources = Object.keys(hist);
-  const flatAssets = assets.filter((a: any) => !histSources.some((s) => a.name && (a.name.toLowerCase().includes(s.toLowerCase()) || s.toLowerCase().includes(a.name.toLowerCase()))));
-  const flatTotal = sum(flatAssets);
+  const cfSources = Object.keys(cf);
 
   const monthsSet = new Set<string>();
   for (const s of histSources) for (const m of Object.keys(hist[s])) monthsSet.add(m);
-  const cf = await readJson("cashflow-history.json", {});
-  for (const s of Object.keys(cf)) for (const m of Object.keys(cf[s])) monthsSet.add(m);
+  for (const s of cfSources) for (const m of Object.keys(cf[s])) monthsSet.add(m);
   const months = [...monthsSet].sort();
+
+  const matchKey = (name: string, keys: string[]) =>
+    keys.find((s) => name && (name.toLowerCase().includes(s.toLowerCase()) || s.toLowerCase().includes(name.toLowerCase()))) || null;
+  const netFlow = (s: string, m: string) => { const f = cf[s]?.[m]; return f ? (Number(f.in) || 0) - (Number(f.out) || 0) : 0; };
+
+  // Per bezitting bepalen hoe de maandwaarde tot stand komt:
+  //  1) CSV-saldohistorie (exact)  2) terugrekenen uit ankersaldo + stromen  3) vlak
+  type Plan = { kind: "hist"; key: string } | { kind: "recon"; key: string; anchorMonth: string; anchorAmount: number } | { kind: "flat"; amount: number };
+  const plans: Plan[] = assets.map((a: any) => {
+    const hk = matchKey(a.name, histSources);
+    if (hk) return { kind: "hist", key: hk };
+    const ck = matchKey(a.name, cfSources);
+    if (ck && a.date && a.amount != null && a.amount !== "") {
+      return { kind: "recon", key: ck, anchorMonth: String(a.date).slice(0, 7), anchorAmount: Number(a.amount) || 0 };
+    }
+    return { kind: "flat", amount: Number(a.amount) || 0 };
+  });
+
+  const assetAt = (p: Plan, m: string): number => {
+    if (p.kind === "flat") return p.amount;
+    if (p.kind === "hist") {
+      const ms = Object.keys(hist[p.key]).filter((x) => x <= m).sort();
+      return ms.length ? Number(hist[p.key][ms[ms.length - 1]]) || 0 : 0;
+    }
+    // recon: balance_end(m) = anker ± som van nettostromen tussen m en ankermaand
+    if (m <= p.anchorMonth) {
+      let s = 0;
+      for (const k of months) if (k > m && k <= p.anchorMonth) s += netFlow(p.key, k);
+      return p.anchorAmount - s;
+    } else {
+      let s = 0;
+      for (const k of months) if (k > p.anchorMonth && k <= m) s += netFlow(p.key, k);
+      return p.anchorAmount + s;
+    }
+  };
+
   const curve = months.map((m) => {
-    let total = flatTotal;
-    for (const s of histSources) {
-      const ms = Object.keys(hist[s]).filter((x) => x <= m).sort();
-      if (ms.length) total += Number(hist[s][ms[ms.length - 1]]) || 0;
-    }
+    let total = 0;
+    for (const p of plans) total += assetAt(p, m);
     let inn = 0, out = 0;
-    for (const s of Object.keys(cf)) {
-      const f = cf[s][m];
-      if (f) { inn += Number(f.in) || 0; out += Number(f.out) || 0; }
-    }
+    for (const s of cfSources) { const f = cf[s][m]; if (f) { inn += Number(f.in) || 0; out += Number(f.out) || 0; } }
     return { month: m, net: Math.round((total - liabTotal) * 100) / 100, in: Math.round(inn * 100) / 100, out: Math.round(out * 100) / 100 };
   });
 
-  return NextResponse.json({ ok: true, assets, liabilities, assetsTotal, liabTotal, netNow, snapshots: v.snapshots || [], captured, monthlyNetWorth: curve, hasHistory: histSources.length > 0, persisted: persistenceEnabled() });
+  return NextResponse.json({ ok: true, assets, liabilities, assetsTotal, liabTotal, netNow, snapshots: v.snapshots || [], captured, monthlyNetWorth: curve, hasHistory: histSources.length > 0 || cfSources.length > 0, persisted: persistenceEnabled() });
 }
 
 export async function POST(req: Request) {

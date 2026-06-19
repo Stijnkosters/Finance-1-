@@ -505,9 +505,17 @@ function VermogenPanel({ onMonth }: any) {
     } catch {}
   };
 
+  const today = () => new Date().toISOString().slice(0, 10);
   const edit = (which: "a" | "l", i: number, field: string, value: any) => {
-    if (which === "a") setAssets((rows) => rows.map((r, idx) => (idx === i ? { ...r, [field]: value } : r)));
-    else setLiab((rows) => rows.map((r, idx) => (idx === i ? { ...r, [field]: value } : r)));
+    const apply = (r: any, idx: number) => {
+      if (idx !== i) return r;
+      const nr = { ...r, [field]: value };
+      // bij handmatig invullen van een bedrag: zet datum op vandaag als die nog leeg is
+      if (field === "amount" && !r.date) nr.date = today();
+      return nr;
+    };
+    if (which === "a") setAssets((rows) => rows.map(apply));
+    else setLiab((rows) => rows.map(apply));
   };
   const addRow = (which: "a" | "l") => {
     if (which === "a") { const n = [...assets, { name: "", amount: 0 }]; setAssets(n); save(n, liab); }
@@ -547,6 +555,10 @@ function VermogenPanel({ onMonth }: any) {
           <div className="vrow" key={i}>
             <input className="vname" value={r.name} placeholder="naam" onChange={(e) => edit(which, i, "name", e.target.value)} onBlur={() => save()} />
             <input className="vamt mono" type="number" value={r.amount} onChange={(e) => edit(which, i, "amount", e.target.value)} onBlur={() => save()} />
+            {!cap && (
+              <input className="vdate" type="date" value={r.date || ""} title="Saldo per deze datum"
+                onChange={(e) => edit(which, i, "date", e.target.value)} onBlur={() => save()} />
+            )}
             <button className="vdel" onClick={() => removeRow(which, i)} title="Verwijderen">×</button>
             {cap && Math.abs((cap.amount || 0) - (Number(r.amount) || 0)) > 0.005 && (
               <button className="vcap" title={`Saldo uit import (${ddmmyyyy(cap.date)})`}

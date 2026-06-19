@@ -171,3 +171,5 @@ tr.selrow{background:var(--accent-soft)}
 .pill-dim{background:#EEF0F3;color:#6B7280}
 .green{color:var(--up)}
 .red{color:var(--down)}
+
+.vdate{width:130px;border:1px solid var(--line);border-radius:8px;padding:7px 8px;font-size:13px;color:var(--ink);background:#fff;font-family:inherit}
