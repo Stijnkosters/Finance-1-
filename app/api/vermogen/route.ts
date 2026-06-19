@@ -23,10 +23,30 @@ const SEED = {
 
 function sum(rows: any[]) { return (rows || []).reduce((a, r) => a + (Number(r.amount) || 0), 0); }
 
+function capKey(name: string, captured: any) {
+  if (!name) return null;
+  return Object.keys(captured || {}).find((k) => name.toLowerCase().includes(k.toLowerCase())) || null;
+}
+// Saldo's uit de CSV-imports automatisch in de bezittingen verwerken
+function mergeAssets(assets: any[], captured: any) {
+  const used = new Set<string>();
+  const merged = (assets || []).map((a) => {
+    const k = capKey(a.name, captured);
+    if (k) { used.add(k); return { ...a, amount: captured[k].amount, capturedDate: captured[k].date }; }
+    return a;
+  });
+  for (const k of Object.keys(captured || {})) {
+    if (!used.has(k) && !merged.some((a) => a.name && a.name.toLowerCase().includes(k.toLowerCase()))) {
+      merged.push({ name: k, amount: captured[k].amount, capturedDate: captured[k].date });
+    }
+  }
+  return merged;
+}
+
 export async function GET() {
-  const v = await readJson("vermogen.json", null);
+  const v = await readJson("vermogen.json", null) || SEED;
   const captured = await readJson("balances.json", {});
-  return NextResponse.json({ ok: true, ...(v || SEED), captured, persisted: persistenceEnabled() });
+  return NextResponse.json({ ok: true, assets: mergeAssets(v.assets, captured), liabilities: v.liabilities, snapshots: v.snapshots || [], captured, persisted: persistenceEnabled() });
 }
 
 export async function POST(req: Request) {
@@ -37,7 +57,8 @@ export async function POST(req: Request) {
 
     if (body.action === "snapshot") {
       const month = body.month || new Date().toISOString().slice(0, 7);
-      const assets = cur.assets || [];
+      const captured = await readJson("balances.json", {});
+      const assets = mergeAssets(cur.assets || [], captured);
       const liabilities = cur.liabilities || [];
       const net = sum(assets) - sum(liabilities);
       const snaps = (cur.snapshots || []).filter((s: any) => s.month !== month);

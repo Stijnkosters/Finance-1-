@@ -84,16 +84,23 @@ function parseWise(lines: string[], delim: string, header: string[], exclude: st
   const iTgt = idx(/target name/);
   const iRef = idx(/reference/);
   const iNote = idx(/^note$/);
+  const iBal = idx(/running balance|^balance$|balance$/);
 
   const expenses: any[] = [];
   let excluded = 0, income = 0, transfers = 0;
+  let endBalance: any = null;
 
   for (let r = 1; r < lines.length; r++) {
     const cols = splitCsvLine(lines[r], delim).map((c) => c.replace(/^"|"$/g, ""));
     const dir = (iDir >= 0 ? cols[iDir] : "").toUpperCase();
-    if (dir !== "OUT") { income++; continue; } // alleen geld eruit
 
     const date = normDate(iDate >= 0 ? cols[iDate] : "");
+    if (date && iBal >= 0 && cols[iBal]) {
+      const bal = parseAmount(cols[iBal]);
+      if (!endBalance || date >= endBalance.date) endBalance = { amount: bal, date };
+    }
+
+    if (dir !== "OUT") { income++; continue; } // alleen geld eruit
     if (!date) continue;
 
     const cur = (iCur >= 0 ? cols[iCur] : "EUR").toUpperCase();
@@ -116,7 +123,7 @@ function parseWise(lines: string[], delim: string, header: string[], exclude: st
     expenses.push({ date, omschrijving: desc.slice(0, 120), methode: "WISE", bedrag: Math.abs(amount), category });
   }
 
-  return { expenses, stats: { total: lines.length - 1, added: expenses.length, excluded, income, transfers }, header, source: "Wise" };
+  return { expenses, stats: { total: lines.length - 1, added: expenses.length, excluded, income, transfers }, header, source: "Wise", endBalance };
 }
 
 export function parseBankCsv(text: string, sourceKey = "rabobank") {

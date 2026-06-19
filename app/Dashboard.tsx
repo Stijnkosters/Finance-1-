@@ -525,11 +525,14 @@ function VermogenPanel() {
             <input className="vname" value={r.name} placeholder="naam" onChange={(e) => edit(which, i, "name", e.target.value)} onBlur={() => save()} />
             <input className="vamt mono" type="number" value={r.amount} onChange={(e) => edit(which, i, "amount", e.target.value)} onBlur={() => save()} />
             <button className="vdel" onClick={() => removeRow(which, i)} title="Verwijderen">×</button>
-            {cap && (
+            {cap && Math.abs((cap.amount || 0) - (Number(r.amount) || 0)) > 0.005 && (
               <button className="vcap" title={`Saldo uit import (${ddmmyyyy(cap.date)})`}
                 onClick={() => { edit(which, i, "amount", cap.amount); setTimeout(() => save(), 0); }}>
                 uit import: {eur(cap.amount)} ↺
               </button>
+            )}
+            {cap && Math.abs((cap.amount || 0) - (Number(r.amount) || 0)) <= 0.005 && (
+              <span className="vcapok" title={`Automatisch uit import (${ddmmyyyy(cap.date)})`}>auto · {ddmmyyyy(cap.date)}</span>
             )}
           </div>
         );
