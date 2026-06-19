@@ -573,7 +573,7 @@ function VermogenPanel({ onMonth }: any) {
           </ResponsiveContainer>
           <div className="table-wrap" style={{ marginTop: 8 }}>
             <table className="table">
-              <thead><tr><th>Maand</th><th className="r">Netto vermogen</th><th className="r">Verschil</th><th></th></tr></thead>
+              <thead><tr><th>Maand</th><th className="r">Erin</th><th className="r">Eruit</th><th className="r">Netto vermogen</th><th className="r">Verschil</th><th></th></tr></thead>
               <tbody>
                 {[...curve].reverse().map((s, i, arr) => {
                   const prev = arr[i + 1];
@@ -581,6 +581,8 @@ function VermogenPanel({ onMonth }: any) {
                   return (
                     <tr key={s.month} className="clickrow" onClick={() => onMonth && onMonth(s.month)}>
                       <td className="nowrap">{monthLabel(s.month)}</td>
+                      <td className="r mono green">{s.in ? eur(s.in) : "—"}</td>
+                      <td className="r mono red">{s.out ? eur(s.out) : "—"}</td>
                       <td className="r mono strong">{eur(s.net)}</td>
                       <td className={`r mono ${delta == null ? "dim" : delta >= 0 ? "green" : "red"}`}>{delta == null ? "—" : `${delta >= 0 ? "▲" : "▼"} ${eur(Math.abs(delta))}`}</td>
                       <td className="r dim" style={{ fontSize: 12 }}>transacties →</td>
@@ -758,14 +760,14 @@ function ImportPanel({ onDone, onReload, cats }: any) {
               <table className="table">
                 <thead><tr>
                   <th className="selcol"><input type="checkbox" checked={allSel} onChange={toggleAll} /></th>
-                  <th>Datum</th><th>Omschrijving</th><th>Categorie</th><th className="r">Bedrag</th>
+                  <th>Datum</th><th>Omschrijving</th><th>Categorie</th><th className="r">Bedrag</th><th></th>
                 </tr></thead>
                 <tbody>
                   {pending.map((e: any, i: number) => (
                     <ExpenseRow key={e.id || i} e={e} cats={cats || []} selectable={true}
                       sel={psel.has(e.id)} onSel={() => togglePsel(e.id)}
                       show={(k: string) => ["date", "omschrijving", "category", "bedrag"].includes(k)}
-                      onCat={editCat} onLabel={editLabel} onNote={() => {}} />
+                      onCat={editCat} onLabel={editLabel} onNote={() => {}} onApprove={(x: any) => approve([x.id])} />
                   ))}
                 </tbody>
               </table>
@@ -779,7 +781,7 @@ function ImportPanel({ onDone, onReload, cats }: any) {
   );
 }
 
-function ExpenseRow({ e, cats, show, sel, onSel, onCat, onNote, onLabel, selectable = true }: any) {
+function ExpenseRow({ e, cats, show, sel, onSel, onCat, onNote, onLabel, onApprove, selectable = true }: any) {
   const [note, setNote] = useState(e.note || "");
   const [label, setLabel] = useState(e.label || "");
   useEffect(() => { setNote(e.note || ""); }, [e.note, e.id]);
@@ -814,6 +816,7 @@ function ExpenseRow({ e, cats, show, sel, onSel, onCat, onNote, onLabel, selecta
       )}
       {show("methode") && <td className="dim">{e.methode}</td>}
       {show("bedrag") && <td className="r mono strong">{eur(e.bedrag)}</td>}
+      {onApprove && <td className="r"><button className="rowok" title="Goedkeuren" onClick={() => onApprove(e)}>✓</button></td>}
     </tr>
   );
 }

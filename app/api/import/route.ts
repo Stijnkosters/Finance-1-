@@ -26,7 +26,7 @@ export async function POST(req: Request) {
     if (!body || body.length < 10) {
       return NextResponse.json({ ok: false, error: "Leeg of ongeldig bestand." }, { status: 400 });
     }
-    const { expenses, stats, source: sourceName, endBalance, monthlyBalances } = parseBankCsv(body, source);
+    const { expenses, stats, source: sourceName, endBalance, monthlyBalances, monthlyFlow } = parseBankCsv(body, source);
 
     let staged = 0, duplicates = 0;
     if (persistenceEnabled() && expenses.length) {
@@ -58,6 +58,12 @@ export async function POST(req: Request) {
       const hist = await readJson("balances-history.json", {});
       hist[sourceName] = { ...(hist[sourceName] || {}), ...monthlyBalances };
       await writeJson("balances-history.json", hist);
+    }
+    // geldstroom (in/uit) per maand bewaren
+    if (persistenceEnabled() && monthlyFlow && Object.keys(monthlyFlow).length) {
+      const cf = await readJson("cashflow-history.json", {});
+      cf[sourceName] = { ...(cf[sourceName] || {}), ...monthlyFlow };
+      await writeJson("cashflow-history.json", cf);
     }
 
     return NextResponse.json({

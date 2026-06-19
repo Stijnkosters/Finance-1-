@@ -162,3 +162,6 @@ tr.selrow{background:var(--accent-soft)}
 
 .clickrow{cursor:pointer}
 .clickrow:hover{background:var(--accent-soft)}
+
+.rowok{width:30px;height:28px;border:1px solid var(--up);border-radius:7px;background:var(--up-soft);color:var(--up);cursor:pointer;font-size:14px;font-weight:700;line-height:1}
+.rowok:hover{background:var(--up);color:#fff}

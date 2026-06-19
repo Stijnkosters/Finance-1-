@@ -57,6 +57,8 @@ export async function GET() {
 
   const monthsSet = new Set<string>();
   for (const s of histSources) for (const m of Object.keys(hist[s])) monthsSet.add(m);
+  const cf = await readJson("cashflow-history.json", {});
+  for (const s of Object.keys(cf)) for (const m of Object.keys(cf[s])) monthsSet.add(m);
   const months = [...monthsSet].sort();
   const curve = months.map((m) => {
     let total = flatTotal;
@@ -64,7 +66,12 @@ export async function GET() {
       const ms = Object.keys(hist[s]).filter((x) => x <= m).sort();
       if (ms.length) total += Number(hist[s][ms[ms.length - 1]]) || 0;
     }
-    return { month: m, net: Math.round((total - liabTotal) * 100) / 100 };
+    let inn = 0, out = 0;
+    for (const s of Object.keys(cf)) {
+      const f = cf[s][m];
+      if (f) { inn += Number(f.in) || 0; out += Number(f.out) || 0; }
+    }
+    return { month: m, net: Math.round((total - liabTotal) * 100) / 100, in: Math.round(inn * 100) / 100, out: Math.round(out * 100) / 100 };
   });
 
   return NextResponse.json({ ok: true, assets, liabilities: v.liabilities, snapshots: v.snapshots || [], captured, monthlyNetWorth: curve, hasHistory: histSources.length > 0, persisted: persistenceEnabled() });
