@@ -524,6 +524,7 @@ function ImportPanel({ onDone }: any) {
           <div className="kpis" style={{ marginBottom: 14 }}>
             <Kpi label="Uitgaven herkend" value={String(res.parsed)} />
             <Kpi label="Nieuw opgeslagen" value={String(res.saved)} tone="up" />
+            {res.revived > 0 && <Kpi label="Hersteld" value={String(res.revived)} tone="up" />}
             <Kpi label="Dubbel (overgeslagen)" value={String(res.duplicates)} />
             <Kpi label="Uitgesloten (al geteld)" value={String(res.stats?.excluded ?? 0)} tone="down" />
             <Kpi label="Transfers (geen kost)" value={String(res.stats?.transfers ?? 0)} />

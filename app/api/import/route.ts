@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { parseBankCsv, dedupKey } from "@/lib/bankparse";
 import { readJson, writeJson, persistenceEnabled } from "@/lib/store";
+import { expenseId } from "@/lib/meta";
 
 export const dynamic = "force-dynamic";
 
@@ -13,8 +14,18 @@ export async function POST(req: Request) {
     }
     const { expenses, stats, header, source: sourceName } = parseBankCsv(body, source);
 
-    let saved = 0, duplicates = 0;
+    let saved = 0, duplicates = 0, revived = 0;
     if (persistenceEnabled() && expenses.length) {
+      // 1) eerder verwijderde regels die nu opnieuw geïmporteerd worden weer terugzetten
+      const meta = await readJson("expense-meta.json", {});
+      let metaChanged = false;
+      for (const e of expenses) {
+        const id = expenseId(e);
+        if (meta[id]?.deleted) { meta[id].deleted = false; revived++; metaChanged = true; }
+      }
+      if (metaChanged) await writeJson("expense-meta.json", meta);
+
+      // 2) nieuwe regels toevoegen (dubbele overslaan)
       const existing: any[] = await readJson("imported-expenses.json", []);
       const seen = new Set(existing.map(dedupKey));
       const toAdd = expenses.filter((e) => {
@@ -24,7 +35,7 @@ export async function POST(req: Request) {
         return true;
       });
       duplicates = expenses.length - toAdd.length;
-      await writeJson("imported-expenses.json", [...existing, ...toAdd]);
+      if (toAdd.length) await writeJson("imported-expenses.json", [...existing, ...toAdd]);
       saved = toAdd.length;
     }
 
@@ -34,6 +45,7 @@ export async function POST(req: Request) {
       parsed: expenses.length,
       saved,
       duplicates,
+      revived,
       persisted: persistenceEnabled(),
       stats,
       header,
@@ -42,6 +54,8 @@ export async function POST(req: Request) {
         ? "Geen opslag actief: voeg een Railway Volume toe en zet DATA_DIR, anders wordt de import niet bewaard."
         : expenses.length === 0
         ? "Geen uitgaven herkend. Stuur me één voorbeeldregel uit je CSV als de kolommen niet kloppen."
+        : revived > 0
+        ? `${revived} eerder verwijderde regel(s) teruggezet.`
         : null,
     });
   } catch (e: any) {
