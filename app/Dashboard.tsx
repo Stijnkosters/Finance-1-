@@ -490,6 +490,22 @@ function VermogenPanel({ onMonth }: any) {
     finally { setNbBusy(false); }
   };
 
+  const [wiseMsg, setWiseMsg] = useState<string | null>(null);
+  const [wiseBusy, setWiseBusy] = useState(false);
+  const pullWise = async () => {
+    setWiseBusy(true); setWiseMsg(null);
+    try {
+      const r = await fetch("/api/wise-balance").then((x) => x.json());
+      if (r.ok && r.captured) {
+        const others = (r.currencies || []).filter((c: any) => c.currency !== "EUR" && c.value);
+        const extra = others.length ? ` (andere valuta: ${others.map((c: any) => `${c.value} ${c.currency}`).join(", ")} — voeg die los toe)` : "";
+        setWiseMsg(`Wise EUR-saldo opgehaald: ${eur(r.captured.amount)}.${extra}`);
+        await load();
+      } else setWiseMsg(r.error || "Ophalen mislukt.");
+    } catch (e: any) { setWiseMsg(e.message); }
+    finally { setWiseBusy(false); }
+  };
+
   const load = async () => {
     try {
       const r = await fetch("/api/vermogen").then((x) => x.json());
@@ -596,6 +612,10 @@ function VermogenPanel({ onMonth }: any) {
       <div className="ctrls" style={{ marginTop: 10 }}>
         <button className="vadd" onClick={pullNicheBay} disabled={nbBusy}>{nbBusy ? "Bezig…" : "↻ NicheBay saldo ophalen"}</button>
         {nbMsg && <span className="dim" style={{ fontSize: 13 }}>{nbMsg}</span>}
+      </div>
+      <div className="ctrls" style={{ marginTop: 6 }}>
+        <button className="vadd" onClick={pullWise} disabled={wiseBusy}>{wiseBusy ? "Bezig…" : "↻ Wise saldo ophalen"}</button>
+        {wiseMsg && <span className="dim" style={{ fontSize: 13 }}>{wiseMsg}</span>}
       </div>
 
       {curve.length > 0 && (
