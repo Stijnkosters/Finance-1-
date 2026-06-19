@@ -19,6 +19,12 @@ async function nbGet(path: string) {
   return j;
 }
 
+export async function nbFinancesSample(limit = 20) {
+  const j = await nbGet(`/finances?page=1&limit=${limit}`);
+  const list = extractList(j);
+  return { sample: list[0] || null, count: Array.isArray(list) ? list.length : 0, keys: list[0] ? Object.keys(list[0]) : [] };
+}
+
 export async function nbTest() {
   return nbGet("/test");
 }
