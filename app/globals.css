@@ -143,3 +143,5 @@ tr.selrow{background:var(--accent-soft)}
 .rowdesc::placeholder{color:var(--soft);opacity:.6}
 .rowdesc:hover{border-color:var(--line)}
 .rowdesc:focus{outline:none;border-color:var(--accent);background:var(--card);box-shadow:0 0 0 2px var(--accent-soft)}
+
+.bar-fill.alt{background:linear-gradient(90deg,#0E8A52,#3A3FD6)}

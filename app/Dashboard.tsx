@@ -171,6 +171,14 @@ export default function Dashboard() {
     return items.map((i) => ({ ...i, share: i.val / sum }));
   }, [totals, overhead]);
 
+  const byCategory = useMemo(() => {
+    const m: Record<string, number> = {};
+    expensesInRange.forEach((e: any) => { m[e.category || "Overig"] = (m[e.category || "Overig"] || 0) + (e.bedrag || 0); });
+    const items = Object.entries(m).map(([key, val]) => ({ key, val: val as number })).sort((a, b) => b.val - a.val);
+    const sum = items.reduce((a, i) => a + i.val, 0) || 1;
+    return { items: items.map((i) => ({ ...i, share: i.val / sum })), total: items.reduce((a, i) => a + i.val, 0) };
+  }, [expensesInRange]);
+
   return (
     <div>
       <header className="top">
@@ -320,6 +328,18 @@ export default function Dashboard() {
                     </div>
                   </Card>
                 </div>
+
+                <Card title="Uitgaven per categorie" subtitle={`overhead · transfers niet meegeteld · totaal ${eur(byCategory.total)}`}>
+                  <div className="breakdown">
+                    {byCategory.items.length === 0 && <div className="muted">Geen overhead in deze periode. Kies een maand of importeer je bankafschrift.</div>}
+                    {byCategory.items.map((c) => (
+                      <div key={c.key}>
+                        <div className="bd-head"><span>{c.key}</span><span className="mono">{eur(c.val)} · {pctf(c.share)}</span></div>
+                        <div className="bar"><div className="bar-fill alt" style={{ width: `${c.share * 100}%` }} /></div>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
 
                 <Card title="Resultaat per dag" subtitle="netto (P&L − overhead)">
                   {timeline.length === 0 ? <div className="muted">Geen orders in deze periode.</div> : (
