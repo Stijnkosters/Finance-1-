@@ -147,3 +147,13 @@ tr.selrow{background:var(--accent-soft)}
 .bar-fill.alt{background:linear-gradient(90deg,#0E8A52,#3A3FD6)}
 
 .banner.ok{background:var(--up-soft);border:1px solid #BFE3CC;color:#0B6B40}
+
+/* vermogen */
+.vrow{display:flex;align-items:center;gap:8px;padding:5px 0;flex-wrap:wrap}
+.vname{flex:1;min-width:140px;font:inherit;font-size:13.5px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}
+.vamt{width:130px;font-size:13.5px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);text-align:right}
+.vname:focus,.vamt:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+.vdel{width:28px;height:28px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--soft);cursor:pointer;font-size:16px;line-height:1}
+.vdel:hover{color:var(--down);border-color:var(--down)}
+.vadd{margin-top:8px;font:inherit;font-size:13px;font-weight:600;padding:6px 12px;border:1px dashed var(--line);border-radius:8px;background:transparent;color:var(--accent);cursor:pointer}
+.vcap{font:inherit;font-size:11.5px;font-weight:600;padding:4px 9px;border:1px solid var(--accent);border-radius:999px;background:var(--accent-soft);color:var(--accent);cursor:pointer;white-space:nowrap}

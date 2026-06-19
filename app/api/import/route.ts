@@ -26,7 +26,7 @@ export async function POST(req: Request) {
     if (!body || body.length < 10) {
       return NextResponse.json({ ok: false, error: "Leeg of ongeldig bestand." }, { status: 400 });
     }
-    const { expenses, stats, source: sourceName } = parseBankCsv(body, source);
+    const { expenses, stats, source: sourceName, endBalance } = parseBankCsv(body, source);
 
     let staged = 0, duplicates = 0;
     if (persistenceEnabled() && expenses.length) {
@@ -42,6 +42,16 @@ export async function POST(req: Request) {
       duplicates = expenses.length - toAdd.length;
       if (toAdd.length) await writeJson("pending-import.json", [...pending, ...toAdd]);
       staged = toAdd.length;
+    }
+
+    // saldo uit de CSV bewaren (per bron) voor het Vermogen-overzicht
+    if (persistenceEnabled() && endBalance) {
+      const balances = await readJson("balances.json", {});
+      const prev = balances[sourceName];
+      if (!prev || endBalance.date >= prev.date) {
+        balances[sourceName] = { amount: endBalance.amount, date: endBalance.date };
+        await writeJson("balances.json", balances);
+      }
     }
 
     return NextResponse.json({

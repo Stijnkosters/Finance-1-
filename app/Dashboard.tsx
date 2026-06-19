@@ -201,7 +201,7 @@ export default function Dashboard() {
           ["overzicht", "Overzicht", LayoutDashboard],
           ["pl", "Dagelijkse P&L", CalendarDays],
           ["uitgaves", "Uitgaves", Receipt],
-          ["balans", "Balans", Wallet],
+          ["balans", "Vermogen", Wallet],
           ["import", "Importeren", Upload],
         ].map(([k, label, Icon]: any) => (
           <button key={k} className={`tab ${tab === k ? "on" : ""}`} onClick={() => setTab(k)}>
@@ -212,7 +212,7 @@ export default function Dashboard() {
 
       <main className="main">
         <div className="row-between">
-          <h2 className="h2">{tab === "overzicht" ? "Overzicht" : tab === "pl" ? "Dagelijkse P&L" : tab === "uitgaves" ? "Uitgaves" : tab === "balans" ? "Balans" : "Importeren"}</h2>
+          <h2 className="h2">{tab === "overzicht" ? "Overzicht" : tab === "pl" ? "Dagelijkse P&L" : tab === "uitgaves" ? "Uitgaves" : tab === "balans" ? "Vermogen" : "Importeren"}</h2>
           {tab !== "import" && tab !== "uitgaves" && (
             <div className="ctrls">
               <div className="seg">
@@ -450,34 +450,142 @@ export default function Dashboard() {
               );
             })()}
 
-            {tab === "balans" && (
-              <div className="grid2">
-                <Card title="Liquide middelen">
-                  <div className="cash">
-                    {(data.liquid || []).map((r: any, i: number) => (
-                      <div className="cash-row" key={i}><span>{r.name}</span><b className="mono">{eur(r.amount)}</b></div>
-                    ))}
-                    <div className="cash-div" />
-                    <div className="cash-row big"><span>Totaal</span><b className="mono">{eur(liquid)}</b></div>
-                  </div>
-                </Card>
-                <Card title="Openstaande facturen">
-                  <div className="cash">
-                    {(data.openInvoices || []).map((r: any, i: number) => (
-                      <div className="cash-row" key={i}><span>{r.name}</span><b className="mono amber">{eur(r.amount)}</b></div>
-                    ))}
-                    <div className="cash-div" />
-                    <div className="cash-row big"><span>Totaal due</span><b className="mono amber">{eur(due)}</b></div>
-                  </div>
-                </Card>
-              </div>
-            )}
           </>
         )}
+
+        {tab === "balans" && <VermogenPanel />}
 
         {tab === "import" && <ImportPanel onDone={load} onReload={reloadData} cats={data.categories || []} />}
       </main>
     </div>
+  );
+}
+
+function VermogenPanel() {
+  const [assets, setAssets] = useState<any[]>([]);
+  const [liab, setLiab] = useState<any[]>([]);
+  const [snaps, setSnaps] = useState<any[]>([]);
+  const [captured, setCaptured] = useState<any>({});
+  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [persisted, setPersisted] = useState(true);
+  const [saved, setSaved] = useState(false);
+
+  const load = async () => {
+    try {
+      const r = await fetch("/api/vermogen").then((x) => x.json());
+      if (r.ok) { setAssets(r.assets || []); setLiab(r.liabilities || []); setSnaps(r.snapshots || []); setCaptured(r.captured || {}); setPersisted(r.persisted !== false); }
+    } catch {}
+  };
+  useEffect(() => { load(); }, []);
+
+  const save = async (a = assets, l = liab) => {
+    try {
+      await fetch("/api/vermogen", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ assets: a, liabilities: l }) });
+      setSaved(true); setTimeout(() => setSaved(false), 1200);
+    } catch {}
+  };
+
+  const edit = (which: "a" | "l", i: number, field: string, value: any) => {
+    if (which === "a") setAssets((rows) => rows.map((r, idx) => (idx === i ? { ...r, [field]: value } : r)));
+    else setLiab((rows) => rows.map((r, idx) => (idx === i ? { ...r, [field]: value } : r)));
+  };
+  const addRow = (which: "a" | "l") => {
+    if (which === "a") { const n = [...assets, { name: "", amount: 0 }]; setAssets(n); save(n, liab); }
+    else { const n = [...liab, { name: "", amount: 0 }]; setLiab(n); save(assets, n); }
+  };
+  const removeRow = (which: "a" | "l", i: number) => {
+    if (which === "a") { const n = assets.filter((_, idx) => idx !== i); setAssets(n); save(n, liab); }
+    else { const n = liab.filter((_, idx) => idx !== i); setLiab(n); save(assets, n); }
+  };
+
+  const sum = (rows: any[]) => rows.reduce((a, r) => a + (Number(r.amount) || 0), 0);
+  const aTot = sum(assets), lTot = sum(liab), net = aTot - lTot;
+
+  const snapshot = async () => {
+    await save();
+    try {
+      const r = await fetch("/api/vermogen", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "snapshot", month }) }).then((x) => x.json());
+      if (r.ok) setSnaps(r.snapshots || []);
+    } catch {}
+  };
+
+  const monthLabel = (m: string) => { const [y, mm] = m.split("-"); return new Date(+y, +mm - 1, 1).toLocaleDateString("nl-NL", { month: "long", year: "numeric" }); };
+
+  const capturedFor = (name: string) => {
+    const key = Object.keys(captured).find((k) => name && name.toLowerCase().includes(k.toLowerCase()));
+    return key ? { key, ...captured[key] } : null;
+  };
+
+  const rows = (which: "a" | "l", list: any[]) => (
+    <div className="cash">
+      {list.map((r, i) => {
+        const cap = which === "a" ? capturedFor(r.name) : null;
+        return (
+          <div className="vrow" key={i}>
+            <input className="vname" value={r.name} placeholder="naam" onChange={(e) => edit(which, i, "name", e.target.value)} onBlur={() => save()} />
+            <input className="vamt mono" type="number" value={r.amount} onChange={(e) => edit(which, i, "amount", e.target.value)} onBlur={() => save()} />
+            <button className="vdel" onClick={() => removeRow(which, i)} title="Verwijderen">×</button>
+            {cap && (
+              <button className="vcap" title={`Saldo uit import (${ddmmyyyy(cap.date)})`}
+                onClick={() => { edit(which, i, "amount", cap.amount); setTimeout(() => save(), 0); }}>
+                uit import: {eur(cap.amount)} ↺
+              </button>
+            )}
+          </div>
+        );
+      })}
+      <button className="vadd" onClick={() => addRow(which)}>+ regel</button>
+    </div>
+  );
+
+  return (
+    <>
+      {!persisted && <div className="banner warn">Geen opslag actief — zet DATA_DIR + Railway Volume, anders wordt je vermogen niet bewaard.</div>}
+
+      <div className={`hero ${net >= 0 ? "up" : "down"}`} style={{ marginBottom: 18, gridTemplateColumns: "1fr" }}>
+        <div>
+          <div className="hero-label">NETTO VERMOGEN</div>
+          <div className="hero-value">{net >= 0 ? <TrendingUp size={30} /> : <TrendingDown size={30} />} {eur(net)}</div>
+          <div className="hero-note">Bezittingen {eur(aTot)} − schulden {eur(lTot)}.{saved ? " ✓ opgeslagen" : ""}</div>
+        </div>
+      </div>
+
+      <div className="grid2">
+        <Card title="Bezittingen" subtitle={eur(aTot)}>{rows("a", assets)}</Card>
+        <Card title="Schulden" subtitle={eur(lTot)}>{rows("l", liab)}</Card>
+      </div>
+
+      <Card title="Maand vastleggen" subtitle="bewaar je vermogen aan het eind van de maand">
+        <div className="ctrls" style={{ marginBottom: 14 }}>
+          <select className="msel" value={month} onChange={(e) => setMonth(e.target.value)}>
+            {MONTHS.map((m) => <option key={m.val} value={m.val}>{m.label}</option>)}
+          </select>
+          <button className="bulkdel" style={{ background: "var(--accent)" }} onClick={snapshot}>Snapshot opslaan</button>
+        </div>
+        {snaps.length === 0 ? <div className="muted">Nog geen snapshots. Vul je saldo's in en sla de maand op.</div> : (
+          <div className="table-wrap">
+            <table className="table">
+              <thead><tr><th>Maand</th><th className="r">Bezittingen</th><th className="r">Schulden</th><th className="r">Netto vermogen</th><th className="r">Verschil</th></tr></thead>
+              <tbody>
+                {[...snaps].reverse().map((s, i, arr) => {
+                  const prev = arr[i + 1];
+                  const delta = prev ? s.net - prev.net : null;
+                  return (
+                    <tr key={s.month}>
+                      <td className="nowrap">{monthLabel(s.month)}</td>
+                      <td className="r mono">{eur(s.assetsTotal)}</td>
+                      <td className="r mono">{eur(s.liabTotal)}</td>
+                      <td className="r mono strong">{eur(s.net)}</td>
+                      <td className={`r mono ${delta == null ? "dim" : delta >= 0 ? "green" : "red"}`}>{delta == null ? "—" : `${delta >= 0 ? "▲" : "▼"} ${eur(Math.abs(delta))}`}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+    </>
   );
 }
 

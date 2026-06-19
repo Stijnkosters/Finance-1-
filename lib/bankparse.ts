@@ -145,9 +145,11 @@ export function parseBankCsv(text: string, sourceKey = "rabobank") {
 
   const nameIdx = header.findIndex((h) => /naam tegenpartij|tegenpartij|naam|counterparty|merchant|name/.test(h));
   const descIdxs = header.map((h, i) => (/omschrijving|mededeling|description|memo|narrative|reference/.test(h) ? i : -1)).filter((i) => i >= 0);
+  const balIdx = header.findIndex((h) => /saldo na trn|saldo|running balance|^balance$|balance$/.test(h));
 
   const expenses: any[] = [];
   let excluded = 0, income = 0, transfers = 0;
+  let endBalance: any = null;
 
   for (let r = 1; r < lines.length; r++) {
     const cols = splitCsvLine(lines[r], delim).map((c) => c.replace(/^"|"$/g, ""));
@@ -155,7 +157,11 @@ export function parseBankCsv(text: string, sourceKey = "rabobank") {
     const amount = ai >= 0 ? parseAmount(cols[ai]) : 0;
     if (!date) continue;
 
-    // tekenregel: bank/paypal -> uitgave = negatief; creditcard -> uitgave = positief (aankoop)
+    if (balIdx >= 0 && cols[balIdx] != null && cols[balIdx] !== "") {
+      const bal = parseAmount(cols[balIdx]);
+      if (!endBalance || date >= endBalance.date) endBalance = { amount: bal, date };
+    }
+
     const isExpense = src.type === "creditcard" ? amount > 0 : amount < 0;
     if (!isExpense || amount === 0) { income++; continue; }
 
@@ -173,7 +179,7 @@ export function parseBankCsv(text: string, sourceKey = "rabobank") {
     expenses.push({ date, omschrijving: desc.slice(0, 120), methode: src.label, bedrag: Math.abs(amount), category });
   }
 
-  return { expenses, stats: { total: lines.length - 1, added: expenses.length, excluded, income, transfers }, header, source: src.name };
+  return { expenses, stats: { total: lines.length - 1, added: expenses.length, excluded, income, transfers }, header, source: src.name, endBalance };
 }
 
 export function dedupKey(e: any): string {
