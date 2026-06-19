@@ -8,6 +8,12 @@ import {
 import { TrendingUp, TrendingDown, LayoutDashboard, CalendarDays, Receipt, Wallet, RefreshCw, Upload, Trash2 } from "lucide-react";
 
 const eur = (n: number) => new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR" }).format(n || 0);
+
+// Vaste terugval zodat de categorie-dropdowns nooit leeg zijn, ook als /api/data hapert.
+const FALLBACK_CATEGORIES = [
+  "Software", "AI/Tools", "Marketing", "Boekhouding",
+  "Bankkosten", "Team", "Verzending", "Voorraad", "Leverancier betalingen", "Pandkosten", "Transfer", "Privé", "Overig",
+];
 const numf = (n: number, d = 2) => new Intl.NumberFormat("nl-NL", { minimumFractionDigits: d, maximumFractionDigits: d }).format(n || 0);
 const pctf = (n: number) => `${(n * 100).toFixed(1).replace(".", ",")}%`;
 const ddmm = (iso: string) => { const [, m, d] = iso.split("-"); return `${d}-${m}`; };
@@ -440,7 +446,7 @@ export default function Dashboard() {
                       <tbody>
                         {rows.length === 0 && <tr><td colSpan={visCount + 1} className="dim center">Geen uitgaves in deze periode.</td></tr>}
                         {rows.map((e: any, i: number) => (
-                          <ExpenseRow key={e.id || i} e={e} cats={data.categories || []} show={showCol}
+                          <ExpenseRow key={e.id || i} e={e} cats={(data.categories && data.categories.length) ? data.categories : FALLBACK_CATEGORIES} show={showCol}
                             sel={selected.has(e.id)} onSel={() => toggleSel(e.id)} onCat={saveCat} onNote={saveNote} onLabel={saveLabel} />
                         ))}
                       </tbody>
@@ -455,7 +461,7 @@ export default function Dashboard() {
 
         {tab === "balans" && <VermogenPanel onMonth={(m: string) => { setExpMonth(m); setTab("uitgaves"); }} />}
 
-        {tab === "import" && <ImportPanel onDone={load} onReload={reloadData} cats={data.categories || []} />}
+        {tab === "import" && <ImportPanel onDone={load} onReload={reloadData} cats={(data.categories && data.categories.length) ? data.categories : FALLBACK_CATEGORIES} />}
       </main>
     </div>
   );
