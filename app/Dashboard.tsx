@@ -763,14 +763,29 @@ function ImportPanel({ onDone, onReload, cats }: any) {
         {msg && <div className="banner ok" style={{ marginTop: 12 }}>{msg}</div>}
         {res?.note && <div className="banner warn" style={{ marginTop: 12 }}>{res.note}</div>}
         {res && (
-          <div className="kpis" style={{ marginTop: 14 }}>
-            <Kpi label="Herkend" value={String(res.parsed)} />
-            <Kpi label="In wachtrij gezet" value={String(res.staged)} tone="up" />
-            <Kpi label="Dubbel (overgeslagen)" value={String(res.duplicates)} />
-            <Kpi label="Uitgesloten" value={String(res.stats?.excluded ?? 0)} tone="down" />
-            <Kpi label="Transfers" value={String(res.stats?.transfers ?? 0)} />
-            <Kpi label="Inkomend" value={String(res.stats?.income ?? 0)} />
-          </div>
+          <>
+            <div className="kpis" style={{ marginTop: 14 }}>
+              <Kpi label="Herkend" value={String(res.parsed)} />
+              <Kpi label="In wachtrij gezet" value={String(res.staged)} tone="up" />
+              <Kpi label="Dubbel (overgeslagen)" value={String(res.duplicates)} />
+              <Kpi label="Uitgesloten" value={String(res.stats?.excluded ?? 0)} tone="down" />
+              <Kpi label="Transfers" value={String(res.stats?.transfers ?? 0)} />
+              <Kpi label="Inkomend" value={String(res.stats?.income ?? 0)} />
+              <Kpi label="Overgeslagen" value={String(res.stats?.skipped ?? 0)} tone={(res.stats?.skipped ?? 0) > 0 ? "down" : undefined} />
+            </div>
+            {(() => {
+              const s = res.stats || {};
+              const accounted = (res.parsed || 0) + (s.income || 0) + (s.excluded || 0) + (s.skipped || 0);
+              const total = s.total || 0;
+              const ok = accounted === total;
+              return (
+                <div className={`banner ${ok ? "info" : "warn"}`} style={{ marginTop: 12 }}>
+                  <b>{total} regels in je CSV</b> = {res.parsed || 0} uitgaven + {s.income || 0} inkomend + {s.excluded || 0} uitgesloten + {s.skipped || 0} overgeslagen{ok ? " ✓ alles verwerkt" : ` — ${total - accounted} niet verklaard`}.
+                  {(s.skipped ?? 0) > 0 && <> De <b>{s.skipped} overgeslagen</b> regels hadden geen herkenbare datum/bedrag — stuur me 2 voorbeeldregels uit je CSV en ik fix het format.</>}
+                </div>
+              );
+            })()}
+          </>
         )}
       </Card>
 

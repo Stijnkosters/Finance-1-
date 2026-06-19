@@ -93,7 +93,7 @@ function parseWise(lines: string[], delim: string, header: string[], exclude: st
   const iBal = idx(/running balance|^balance$|balance$/);
 
   const expenses: any[] = [];
-  let excluded = 0, income = 0, transfers = 0;
+  let excluded = 0, income = 0, transfers = 0, skipped = 0;
   let endBalance: any = null;
   const monthBal: Record<string, { amount: number; date: string }> = {};
   const flow: Record<string, { in: number; out: number }> = {};
@@ -128,11 +128,11 @@ function parseWise(lines: string[], delim: string, header: string[], exclude: st
       }
       income++; continue;
     } // alleen geld eruit telt als uitgave
-    if (!date) continue;
+    if (!date) { skipped++; continue; }
 
     const cur = (iCur >= 0 ? cols[iCur] : "EUR").toUpperCase();
     const amount = parseAmount(iAmt >= 0 ? cols[iAmt] : "0") + (iFee >= 0 ? parseAmount(cols[iFee]) : 0);
-    if (!amount) continue;
+    if (!amount) { skipped++; continue; }
 
     const tgt = iTgt >= 0 ? cols[iTgt] : "";
     const ref = iRef >= 0 ? cols[iRef] : "";
@@ -153,7 +153,7 @@ function parseWise(lines: string[], delim: string, header: string[], exclude: st
   const monthlyBalances: Record<string, number> = {};
   for (const k of Object.keys(monthBal)) monthlyBalances[k] = monthBal[k].amount;
 
-  return { expenses, stats: { total: lines.length - 1, added: expenses.length, excluded, income, transfers }, header, source: "Wise", endBalance, monthlyBalances, monthlyFlow: flow, incomeRows };
+  return { expenses, stats: { total: lines.length - 1, added: expenses.length, excluded, income, transfers, skipped }, header, source: "Wise", endBalance, monthlyBalances, monthlyFlow: flow, incomeRows };
 }
 
 export function parseBankCsv(text: string, sourceKey = "rabobank") {
@@ -161,7 +161,7 @@ export function parseBankCsv(text: string, sourceKey = "rabobank") {
   const exclude = [...EXCLUDE_DEFAULT, ...envExclude, ...(src.type === "paypal" ? PAYPAL_EXTRA_EXCLUDE : [])];
 
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
-  if (!lines.length) return { expenses: [], stats: { total: 0, added: 0, excluded: 0, income: 0, transfers: 0 }, header: [], source: src.name, endBalance: null, monthlyBalances: {}, monthlyFlow: {}, incomeRows: [] };
+  if (!lines.length) return { expenses: [], stats: { total: 0, added: 0, excluded: 0, income: 0, transfers: 0, skipped: 0 }, header: [], source: src.name, endBalance: null, monthlyBalances: {}, monthlyFlow: {}, incomeRows: [] };
 
   const delim = lines[0].split(";").length > lines[0].split(",").length ? ";" : ",";
   const header = splitCsvLine(lines[0], delim).map((h) => h.trim().toLowerCase().replace(/"/g, ""));
@@ -185,7 +185,7 @@ export function parseBankCsv(text: string, sourceKey = "rabobank") {
   const balIdx = header.findIndex((h) => /saldo na trn|saldo|running balance|^balance$|balance$/.test(h));
 
   const expenses: any[] = [];
-  let excluded = 0, income = 0, transfers = 0;
+  let excluded = 0, income = 0, transfers = 0, skipped = 0;
   let endBalance: any = null;
   const monthBal: Record<string, { amount: number; date: string }> = {};
   const flow: Record<string, { in: number; out: number }> = {};
@@ -195,7 +195,8 @@ export function parseBankCsv(text: string, sourceKey = "rabobank") {
     const cols = splitCsvLine(lines[r], delim).map((c) => c.replace(/^"|"$/g, ""));
     const date = di >= 0 ? normDate(cols[di]) : null;
     const amount = ai >= 0 ? parseAmount(cols[ai]) : 0;
-    if (!date) continue;
+    const blank = cols.every((c) => !c || !c.trim());
+    if (!date) { if (!blank) skipped++; continue; }
 
     if (balIdx >= 0 && cols[balIdx] != null && cols[balIdx] !== "") {
       const bal = parseAmount(cols[balIdx]);
@@ -270,7 +271,7 @@ export function parseBankCsv(text: string, sourceKey = "rabobank") {
   const monthlyBalances: Record<string, number> = {};
   for (const k of Object.keys(monthBal)) monthlyBalances[k] = monthBal[k].amount;
 
-  return { expenses, stats: { total: lines.length - 1, added: expenses.length, excluded, income, transfers }, header, source: src.name, endBalance, monthlyBalances, monthlyFlow: flow, incomeRows };
+  return { expenses, stats: { total: lines.length - 1, added: expenses.length, excluded, income, transfers, skipped }, header, source: src.name, endBalance, monthlyBalances, monthlyFlow: flow, incomeRows };
 }
 
 export function dedupKey(e: any): string {
