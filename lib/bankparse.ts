@@ -44,6 +44,7 @@ export const TRANSFER_RE = /revolut|wise|airwallex|\bbunq\b|\bn26\b|american exp
 const PAYMENT_RE = /payment|betaling|thank you|received|ontvangen|incasso|autom|direct debit|sepa|aflossing|verrekening/i;
 // echte refund / terugbetaling van een leverancier (op een bankrekening)
 const REFUND_RE = /refund|terugbetaling|terugstorting|restitutie|chargeback|credit ?nota|geld terug|reversal|retour/i;
+function matchedExclude(hay: string, exclude: string[]) { return exclude.find((k) => hay.includes(k)) || null; }
 
 function parseAmount(s: string): number {
   s = (s || "").trim().replace(/[€$\s]/g, "");
@@ -98,6 +99,7 @@ function parseWise(lines: string[], delim: string, header: string[], exclude: st
   const monthBal: Record<string, { amount: number; date: string }> = {};
   const flow: Record<string, { in: number; out: number }> = {};
   const incomeRows: any[] = [];
+  const excludedRows: any[] = [];
 
   for (let r = 1; r < lines.length; r++) {
     const cols = splitCsvLine(lines[r], delim).map((c) => c.replace(/^"|"$/g, ""));
@@ -141,7 +143,7 @@ function parseWise(lines: string[], delim: string, header: string[], exclude: st
     if (cur && cur !== "EUR") desc = `${desc} [${cur}]`;
 
     const hay = desc.toLowerCase();
-    if (exclude.some((k) => hay.includes(k))) { excluded++; continue; }
+    { const xk = matchedExclude(hay, exclude); if (xk) { excluded++; excludedRows.push({ date, omschrijving: desc.slice(0, 120), methode: "WISE", bedrag: Math.abs(amount), reason: xk }); continue; } }
 
     let category = "Overig";
     for (const [re, cat] of CATEGORY_RULES) { if (re.test(desc)) { category = cat; break; } }
@@ -153,7 +155,7 @@ function parseWise(lines: string[], delim: string, header: string[], exclude: st
   const monthlyBalances: Record<string, number> = {};
   for (const k of Object.keys(monthBal)) monthlyBalances[k] = monthBal[k].amount;
 
-  return { expenses, stats: { total: lines.length - 1, added: expenses.length, excluded, income, transfers, skipped }, header, source: "Wise", endBalance, monthlyBalances, monthlyFlow: flow, incomeRows };
+  return { expenses, stats: { total: lines.length - 1, added: expenses.length, excluded, income, transfers, skipped }, header, source: "Wise", endBalance, monthlyBalances, monthlyFlow: flow, incomeRows, excludedRows };
 }
 
 export function parseBankCsv(text: string, sourceKey = "rabobank") {
@@ -161,7 +163,7 @@ export function parseBankCsv(text: string, sourceKey = "rabobank") {
   const exclude = [...EXCLUDE_DEFAULT, ...envExclude, ...(src.type === "paypal" ? PAYPAL_EXTRA_EXCLUDE : [])];
 
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
-  if (!lines.length) return { expenses: [], stats: { total: 0, added: 0, excluded: 0, income: 0, transfers: 0, skipped: 0 }, header: [], source: src.name, endBalance: null, monthlyBalances: {}, monthlyFlow: {}, incomeRows: [] };
+  if (!lines.length) return { expenses: [], stats: { total: 0, added: 0, excluded: 0, income: 0, transfers: 0, skipped: 0 }, header: [], source: src.name, endBalance: null, monthlyBalances: {}, monthlyFlow: {}, incomeRows: [], excludedRows: [] };
 
   const delim = lines[0].split(";").length > lines[0].split(",").length ? ";" : ",";
   const header = splitCsvLine(lines[0], delim).map((h) => h.trim().toLowerCase().replace(/"/g, ""));
@@ -190,6 +192,7 @@ export function parseBankCsv(text: string, sourceKey = "rabobank") {
   const monthBal: Record<string, { amount: number; date: string }> = {};
   const flow: Record<string, { in: number; out: number }> = {};
   const incomeRows: any[] = [];
+  const excludedRows: any[] = [];
 
   for (let r = 1; r < lines.length; r++) {
     const cols = splitCsvLine(lines[r], delim).map((c) => c.replace(/^"|"$/g, ""));
@@ -224,18 +227,17 @@ export function parseBankCsv(text: string, sourceKey = "rabobank") {
         // aflossing/betaling van de kaart vanaf je bank = transfer, geen refund
         if (PAYMENT_RE.test(desc)) { transfers++; continue; }
         // echte refund -> negatieve uitgave (haalt kosten eraf), en telt als geld erin
-        if (exclude.some((k) => hay.includes(k))) { excluded++; continue; }
+        { const xk = matchedExclude(hay, exclude); if (xk) { excluded++; excludedRows.push({ date, omschrijving: desc.slice(0, 120), methode: src.label, bedrag: Math.abs(amount), reason: xk }); continue; } }
         let rcat = "Overig";
         for (const [re, c] of CATEGORY_RULES) { if (re.test(desc)) { rcat = c; break; } }
         const mk = date.slice(0, 7);
         if (!flow[mk]) flow[mk] = { in: 0, out: 0 };
         flow[mk].in += Math.abs(amount);
-        income++;
         expenses.push({ date, omschrijving: ("Refund — " + desc).slice(0, 120), methode: src.label, bedrag: -Math.abs(amount), category: rcat });
         continue;
       }
       // amount > 0 -> aankoop op de kaart
-      if (exclude.some((k) => hay.includes(k))) { excluded++; continue; }
+      { const xk = matchedExclude(hay, exclude); if (xk) { excluded++; excludedRows.push({ date, omschrijving: desc.slice(0, 120), methode: src.label, bedrag: Math.abs(amount), reason: xk }); continue; } }
       let ccat = "Overig";
       for (const [re, c] of CATEGORY_RULES) { if (re.test(desc)) { ccat = c; break; } }
       if (TRANSFER_RE.test(desc)) { ccat = "Transfer"; transfers++; }
@@ -249,7 +251,6 @@ export function parseBankCsv(text: string, sourceKey = "rabobank") {
       if (REFUND_RE.test(desc) && !TRANSFER_RE.test(desc) && !exclude.some((k) => hay.includes(k))) {
         let rcat = "Overig";
         for (const [re, c] of CATEGORY_RULES) { if (re.test(desc)) { rcat = c; break; } }
-        income++;
         expenses.push({ date, omschrijving: ("Refund — " + desc).slice(0, 120), methode: src.label, bedrag: -Math.abs(amount), category: rcat });
         continue;
       }
@@ -259,7 +260,7 @@ export function parseBankCsv(text: string, sourceKey = "rabobank") {
     }
     if (amount === 0) { income++; continue; }
     // amount < 0 -> uitgave
-    if (exclude.some((k) => hay.includes(k))) { excluded++; continue; }
+    { const xk = matchedExclude(hay, exclude); if (xk) { excluded++; excludedRows.push({ date, omschrijving: desc.slice(0, 120), methode: src.label, bedrag: Math.abs(amount), reason: xk }); continue; } }
 
     let category = "Overig";
     for (const [re, cat] of CATEGORY_RULES) { if (re.test(desc)) { category = cat; break; } }
@@ -271,7 +272,7 @@ export function parseBankCsv(text: string, sourceKey = "rabobank") {
   const monthlyBalances: Record<string, number> = {};
   for (const k of Object.keys(monthBal)) monthlyBalances[k] = monthBal[k].amount;
 
-  return { expenses, stats: { total: lines.length - 1, added: expenses.length, excluded, income, transfers, skipped }, header, source: src.name, endBalance, monthlyBalances, monthlyFlow: flow, incomeRows };
+  return { expenses, stats: { total: lines.length - 1, added: expenses.length, excluded, income, transfers, skipped }, header, source: src.name, endBalance, monthlyBalances, monthlyFlow: flow, incomeRows, excludedRows };
 }
 
 export function dedupKey(e: any): string {

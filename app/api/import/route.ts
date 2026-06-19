@@ -34,7 +34,7 @@ export async function POST(req: Request) {
     if (!body || body.length < 10) {
       return NextResponse.json({ ok: false, error: "Leeg of ongeldig bestand." }, { status: 400 });
     }
-    const { expenses, stats, source: sourceName, endBalance, monthlyBalances, monthlyFlow, incomeRows } = parseBankCsv(body, source);
+    const { expenses, stats, source: sourceName, endBalance, monthlyBalances, monthlyFlow, incomeRows, excludedRows } = parseBankCsv(body, source);
 
     let staged = 0, duplicates = 0;
     if (persistenceEnabled() && expenses.length) {
@@ -96,6 +96,7 @@ export async function POST(req: Request) {
       staged,
       duplicates,
       incomeStaged,
+      excluded: (excludedRows || []).map((e: any) => ({ ...e, id: dedupKey(e) })),
       persisted: persistenceEnabled(),
       stats,
       pending: persistenceEnabled() ? await decoratedPending() : [],

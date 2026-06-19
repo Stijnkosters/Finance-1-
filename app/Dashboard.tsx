@@ -785,6 +785,29 @@ function ImportPanel({ onDone, onReload, cats }: any) {
                 </div>
               );
             })()}
+            {Array.isArray(res.excluded) && res.excluded.length > 0 && (
+              <details style={{ marginTop: 12 }}>
+                <summary style={{ cursor: "pointer", fontWeight: 600 }}>Bekijk de {res.excluded.length} uitgesloten regels</summary>
+                <p className="muted" style={{ margin: "6px 0" }}>
+                  Deze zijn bewust niet als kost geteld omdat ze al elders meetellen (NicheBay = je COGS per order; Google/Meta = je advertentiekosten). Ziet iets er onterecht uit? Stuur me de omschrijving, dan haal ik 'm uit de uitsluitlijst.
+                </p>
+                <div className="table-wrap">
+                  <table className="table">
+                    <thead><tr><th>Datum</th><th>Omschrijving</th><th>Reden (match)</th><th className="r">Bedrag</th></tr></thead>
+                    <tbody>
+                      {res.excluded.map((e: any, i: number) => (
+                        <tr key={e.id || i}>
+                          <td className="nowrap">{e.date ? ddmmyyyy(e.date) : "—"}</td>
+                          <td title={e.omschrijving}>{e.omschrijving}</td>
+                          <td><span className="pill pill-dim">{e.reason}</span></td>
+                          <td className="r mono">{eur(e.bedrag)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            )}
           </>
         )}
       </Card>
