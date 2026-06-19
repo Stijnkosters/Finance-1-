@@ -41,6 +41,8 @@ const CATEGORY_RULES: [RegExp, string][] = [
 export const TRANSFER_RE = /revolut|wise|airwallex|\bbunq\b|\bn26\b|american express|amex|creditcard|credit ?card|kaartnummer|rekeningoverzicht|eigen rekening|naar rekening|tussenrekening|spaarrekening|tikkie/i;
 // creditcard-aflossing / bijschrijving van je eigen betaling (geen refund)
 const PAYMENT_RE = /payment|betaling|thank you|received|ontvangen|incasso|autom|direct debit|sepa|aflossing|verrekening/i;
+// echte refund / terugbetaling van een leverancier (op een bankrekening)
+const REFUND_RE = /refund|terugbetaling|terugstorting|restitutie|chargeback|credit ?nota|geld terug|reversal|retour/i;
 
 function parseAmount(s: string): number {
   s = (s || "").trim().replace(/[€$\s]/g, "");
@@ -227,8 +229,20 @@ export function parseBankCsv(text: string, sourceKey = "rabobank") {
       continue;
     }
 
-    // BANK / PAYPAL: alleen geld eruit (negatief) is een uitgave
-    if (amount >= 0) { income++; continue; }
+    // BANK / PAYPAL
+    if (amount > 0) {
+      // echte refund/terugbetaling van een leverancier -> negatieve uitgave (haalt kosten eraf)
+      if (REFUND_RE.test(desc) && !TRANSFER_RE.test(desc) && !exclude.some((k) => hay.includes(k))) {
+        let rcat = "Overig";
+        for (const [re, c] of CATEGORY_RULES) { if (re.test(desc)) { rcat = c; break; } }
+        income++;
+        expenses.push({ date, omschrijving: ("Refund — " + desc).slice(0, 120), methode: src.label, bedrag: -Math.abs(amount), category: rcat });
+        continue;
+      }
+      income++; continue; // overige inkomsten (uitbetalingen, transfers) = alleen cashflow "erin"
+    }
+    if (amount === 0) { income++; continue; }
+    // amount < 0 -> uitgave
     if (exclude.some((k) => hay.includes(k))) { excluded++; continue; }
 
     let category = "Overig";
