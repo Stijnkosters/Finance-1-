@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { parseBankCsv, dedupKey } from "@/lib/bankparse";
 import { readJson, writeJson, persistenceEnabled } from "@/lib/store";
-import { expenseId } from "@/lib/meta";
+import { expenseId, merchantKey } from "@/lib/meta";
 
 export const dynamic = "force-dynamic";
 
@@ -49,7 +49,7 @@ export async function POST(req: Request) {
       persisted: persistenceEnabled(),
       stats,
       header,
-      preview: expenses.slice(0, 25),
+      preview: expenses.slice(0, 25).map((e) => ({ ...e, id: expenseId(e), mkey: merchantKey(e.omschrijving || ""), label: e.omschrijving, raw: e.omschrijving })),
       note: !persistenceEnabled()
         ? "Geen opslag actief: voeg een Railway Volume toe en zet DATA_DIR, anders wordt de import niet bewaard."
         : expenses.length === 0

@@ -475,13 +475,13 @@ export default function Dashboard() {
           </>
         )}
 
-        {tab === "import" && <ImportPanel onDone={load} />}
+        {tab === "import" && <ImportPanel onDone={load} onReload={reloadData} cats={data.categories || []} />}
       </main>
     </div>
   );
 }
 
-function ImportPanel({ onDone }: any) {
+function ImportPanel({ onDone, onReload, cats }: any) {
   const [busy, setBusy] = useState(false);
   const [res, setRes] = useState<any>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -507,6 +507,21 @@ function ImportPanel({ onDone }: any) {
       onDone && onDone();
     } catch (e: any) { setErr(e.message); }
     finally { setBusy(false); }
+  };
+
+  const editCat = async (e: any, category: string) => {
+    setRes((r: any) => ({ ...r, preview: r.preview.map((x: any) => (x.id === e.id ? { ...x, category } : x)) }));
+    try {
+      await fetch(`/api/expense`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: e.id, mkey: e.mkey, category, remember: true }) });
+      onReload && onReload();
+    } catch {}
+  };
+  const editLabel = async (e: any, label: string) => {
+    setRes((r: any) => ({ ...r, preview: r.preview.map((x: any) => (x.id === e.id ? { ...x, label } : x)) }));
+    try {
+      await fetch(`/api/expense`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: e.id, mkey: e.mkey, label, remember: true }) });
+      onReload && onReload();
+    } catch {}
   };
 
   const reset = async () => {
@@ -540,7 +555,7 @@ function ImportPanel({ onDone }: any) {
       </Card>
 
       {res && (
-        <Card title="Resultaat" subtitle={`${res.source || ""}${res.persisted ? " · opgeslagen" : " · niet opgeslagen"}`}>
+        <Card title="Resultaat" subtitle={`${res.source || ""}${res.persisted ? " · opgeslagen" : " · niet opgeslagen"} · pas categorie/omschrijving direct aan`}>
           <div className="kpis" style={{ marginBottom: 14 }}>
             <Kpi label="Uitgaven herkend" value={String(res.parsed)} />
             <Kpi label="Nieuw opgeslagen" value={String(res.saved)} tone="up" />
@@ -556,12 +571,9 @@ function ImportPanel({ onDone }: any) {
                 <thead><tr><th>Datum</th><th>Omschrijving</th><th>Categorie</th><th className="r">Bedrag</th></tr></thead>
                 <tbody>
                   {res.preview.map((e: any, i: number) => (
-                    <tr key={i}>
-                      <td className="nowrap">{ddmmyyyy(e.date)}</td>
-                      <td>{e.omschrijving}</td>
-                      <td className="dim">{e.category}</td>
-                      <td className="r mono strong">{eur(e.bedrag)}</td>
-                    </tr>
+                    <ExpenseRow key={e.id || i} e={e} cats={cats || []} selectable={false}
+                      show={(k: string) => ["date", "omschrijving", "category", "bedrag"].includes(k)}
+                      onCat={editCat} onLabel={editLabel} onNote={() => {}} />
                   ))}
                 </tbody>
               </table>
@@ -574,7 +586,7 @@ function ImportPanel({ onDone }: any) {
   );
 }
 
-function ExpenseRow({ e, cats, show, sel, onSel, onCat, onNote, onLabel }: any) {
+function ExpenseRow({ e, cats, show, sel, onSel, onCat, onNote, onLabel, selectable = true }: any) {
   const [note, setNote] = useState(e.note || "");
   const [label, setLabel] = useState(e.label || "");
   useEffect(() => { setNote(e.note || ""); }, [e.note, e.id]);
@@ -582,7 +594,7 @@ function ExpenseRow({ e, cats, show, sel, onSel, onCat, onNote, onLabel }: any) 
   const options: string[] = cats.includes(e.category) ? cats : [e.category, ...cats];
   return (
     <tr className={`${e.edited ? "edited" : ""} ${sel ? "selrow" : ""}`}>
-      <td className="selcol"><input type="checkbox" checked={!!sel} onChange={onSel} /></td>
+      {selectable && <td className="selcol"><input type="checkbox" checked={!!sel} onChange={onSel} /></td>}
       {show("date") && <td className="nowrap">{e.date ? ddmmyyyy(e.date) : "—"}</td>}
       {show("omschrijving") && (
         <td>
