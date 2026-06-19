@@ -131,7 +131,7 @@ export function parseBankCsv(text: string, sourceKey = "rabobank") {
   const exclude = [...EXCLUDE_DEFAULT, ...envExclude, ...(src.type === "paypal" ? PAYPAL_EXTRA_EXCLUDE : [])];
 
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
-  if (!lines.length) return { expenses: [], stats: { total: 0, added: 0, excluded: 0, income: 0 }, header: [], source: src.name };
+  if (!lines.length) return { expenses: [], stats: { total: 0, added: 0, excluded: 0, income: 0, transfers: 0 }, header: [], source: src.name, endBalance: null };
 
   const delim = lines[0].split(";").length > lines[0].split(",").length ? ";" : ",";
   const header = splitCsvLine(lines[0], delim).map((h) => h.trim().toLowerCase().replace(/"/g, ""));
