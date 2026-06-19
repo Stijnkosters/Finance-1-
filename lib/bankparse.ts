@@ -35,6 +35,7 @@ const CATEGORY_RULES: [RegExp, string][] = [
   [/dhl|postnl|ups|fedex|verzend|shipping|track|parcel/i, "Verzending"],
   [/huur|pand|verhuur|kantoorruimte|kantoor|opslag|warehouse|storage|garagebox/i, "Pandkosten"],
   [/adobe|canva|figma|notion|slack|zoom|microsoft|office/i, "Software"],
+  [/leverancier|supplier|inkoop|wholesale|groothandel|alibaba|aliexpress|1688|dsers|cjdropshipping|autods/i, "Leverancier betalingen"],
 ];
 
 // Eigen-rekening overboekingen / top-ups / kaart-aflossingen -> tag als "Transfer" (telt niet als kost).

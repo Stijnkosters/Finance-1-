@@ -5,7 +5,7 @@ import { TRANSFER_RE } from "@/lib/bankparse";
 
 export const CATEGORIES = [
   "Software", "AI/Tools", "Marketing", "Boekhouding",
-  "Bankkosten", "Team", "Verzending", "Voorraad", "Pandkosten", "Transfer", "Privé", "Overig",
+  "Bankkosten", "Team", "Verzending", "Voorraad", "Leverancier betalingen", "Pandkosten", "Transfer", "Privé", "Overig",
 ];
 
 // Categorieën die NIET als kost meetellen (overboekingen tussen eigen rekeningen).
