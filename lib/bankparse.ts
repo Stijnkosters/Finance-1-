@@ -33,6 +33,7 @@ const CATEGORY_RULES: [RegExp, string][] = [
   [/wise|revolut|paypal|mollie|airwallex|klarna|stripe/i, "Bankkosten"],
   [/salaris|loon|payroll|medewerker|freelance|upwork|fiverr|kristina|maygon/i, "Team"],
   [/dhl|postnl|ups|fedex|verzend|shipping|track|parcel/i, "Verzending"],
+  [/huur|pand|verhuur|kantoorruimte|kantoor|opslag|warehouse|storage|garagebox/i, "Pandkosten"],
   [/adobe|canva|figma|notion|slack|zoom|microsoft|office/i, "Software"],
 ];
 

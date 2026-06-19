@@ -636,6 +636,8 @@ function ImportPanel({ onDone, onReload, cats }: any) {
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [source, setSource] = useState("rabobank");
+  const [psel, setPsel] = useState<Set<string>>(new Set());
+  const togglePsel = (id: string) => setPsel((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   const SOURCE_OPTIONS = [
     ["rabobank", "Rabobank"], ["wise", "Wise"], ["revolut", "Revolut"],
@@ -678,12 +680,13 @@ function ImportPanel({ onDone, onReload, cats }: any) {
     } catch {}
   };
 
-  const approve = async () => {
+  const approve = async (ids?: string[]) => {
     setBusy(true); setErr(null);
     try {
-      const r = await fetch(`/api/import/approve`, { method: "POST" }).then((x) => x.json());
+      const r = await fetch(`/api/import/approve`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ids && ids.length ? { ids } : {}) }).then((x) => x.json());
       if (!r.ok) throw new Error(r.error || "Goedkeuren mislukt");
-      setPending([]); setRes(null);
+      setPsel(new Set());
+      await refreshPending();
       setMsg(`${r.approved} transactie(s) goedgekeurd en toegevoegd${r.revived ? ` · ${r.revived} hersteld` : ""}.`);
       onDone && onDone();
     } catch (e: any) { setErr(e.message); }
@@ -739,27 +742,36 @@ function ImportPanel({ onDone, onReload, cats }: any) {
         )}
       </Card>
 
-      {pending.length > 0 && (
-        <Card title="Wachtrij — nog niet meegeteld" subtitle={`${pending.length} regels · ${eur(pendingTotal)} · pas aan en keur goed`}>
-          <div className="bulkbar" style={{ background: "var(--up-soft)", borderColor: "var(--up)", color: "var(--up)" }}>
-            <span>{pending.length} regel(s) in wachtrij</span>
-            <button className="bulkdel" style={{ background: "var(--up)" }} onClick={approve} disabled={busy}>✓ Goedkeuren &amp; toevoegen</button>
-            <button className="bulkclear" onClick={discard} disabled={busy}>Verwerp</button>
-          </div>
-          <div className="table-wrap">
-            <table className="table">
-              <thead><tr><th>Datum</th><th>Omschrijving</th><th>Categorie</th><th className="r">Bedrag</th></tr></thead>
-              <tbody>
-                {pending.map((e: any, i: number) => (
-                  <ExpenseRow key={e.id || i} e={e} cats={cats || []} selectable={false}
-                    show={(k: string) => ["date", "omschrijving", "category", "bedrag"].includes(k)}
-                    onCat={editCat} onLabel={editLabel} onNote={() => {}} />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      )}
+      {pending.length > 0 && (() => {
+        const allSel = pending.length > 0 && pending.every((e: any) => psel.has(e.id));
+        const toggleAll = () => { const n = new Set(psel); allSel ? pending.forEach((e: any) => n.delete(e.id)) : pending.forEach((e: any) => n.add(e.id)); setPsel(n); };
+        return (
+          <Card title="Wachtrij — nog niet meegeteld" subtitle={`${pending.length} regels · ${eur(pendingTotal)} · vink aan en keur goed`}>
+            <div className="bulkbar" style={{ background: "var(--up-soft)", borderColor: "var(--up)", color: "var(--up)" }}>
+              <span>{psel.size > 0 ? `${psel.size} geselecteerd` : `${pending.length} in wachtrij`}</span>
+              {psel.size > 0 && <button className="bulkdel" style={{ background: "var(--up)" }} onClick={() => approve([...psel])} disabled={busy}>✓ Goedkeuren ({psel.size})</button>}
+              <button className="bulkclear" onClick={() => approve()} disabled={busy}>Alles goedkeuren</button>
+              <button className="bulkclear" onClick={discard} disabled={busy}>Verwerp</button>
+            </div>
+            <div className="table-wrap">
+              <table className="table">
+                <thead><tr>
+                  <th className="selcol"><input type="checkbox" checked={allSel} onChange={toggleAll} /></th>
+                  <th>Datum</th><th>Omschrijving</th><th>Categorie</th><th className="r">Bedrag</th>
+                </tr></thead>
+                <tbody>
+                  {pending.map((e: any, i: number) => (
+                    <ExpenseRow key={e.id || i} e={e} cats={cats || []} selectable={true}
+                      sel={psel.has(e.id)} onSel={() => togglePsel(e.id)}
+                      show={(k: string) => ["date", "omschrijving", "category", "bedrag"].includes(k)}
+                      onCat={editCat} onLabel={editLabel} onNote={() => {}} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        );
+      })()}
 
       <button className="resetbtn" onClick={reset} disabled={busy} style={{ marginTop: 4 }}><Trash2 size={14} /> Goedgekeurde import wissen</button>
     </>
