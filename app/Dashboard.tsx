@@ -470,6 +470,19 @@ function VermogenPanel({ onMonth }: any) {
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [persisted, setPersisted] = useState(true);
   const [saved, setSaved] = useState(false);
+  const [nbMsg, setNbMsg] = useState<string | null>(null);
+  const [nbBusy, setNbBusy] = useState(false);
+
+  const pullNicheBay = async () => {
+    setNbBusy(true); setNbMsg(null);
+    try {
+      const r = await fetch("/api/nichebay-finance").then((x) => x.json());
+      if (r.ok && r.captured) { setNbMsg(`NicheBay saldo opgehaald: ${eur(r.captured.amount)} (via ${r.captured.via}).`); await load(); }
+      else if (r.ok) setNbMsg("Geen saldo-veld gevonden in de NicheBay-respons. Stuur Stijn de output van /api/nichebay-finance.");
+      else setNbMsg(r.error || "Ophalen mislukt.");
+    } catch (e: any) { setNbMsg(e.message); }
+    finally { setNbBusy(false); }
+  };
 
   const load = async () => {
     try {
@@ -514,13 +527,16 @@ function VermogenPanel({ onMonth }: any) {
 
   const capturedFor = (name: string) => {
     const key = Object.keys(captured).find((k) => name && name.toLowerCase().includes(k.toLowerCase()));
-    return key ? { key, ...captured[key] } : null;
+    if (!key) return null;
+    const c = captured[key];
+    const amount = c && c.type === "creditcard" ? Math.abs(Number(c.amount) || 0) : c.amount;
+    return { key, ...c, amount };
   };
 
   const rows = (which: "a" | "l", list: any[]) => (
     <div className="cash">
       {list.map((r, i) => {
-        const cap = which === "a" ? capturedFor(r.name) : null;
+        const cap = capturedFor(r.name);
         return (
           <div className="vrow" key={i}>
             <input className="vname" value={r.name} placeholder="naam" onChange={(e) => edit(which, i, "name", e.target.value)} onBlur={() => save()} />
@@ -557,6 +573,11 @@ function VermogenPanel({ onMonth }: any) {
       <div className="grid2">
         <Card title="Bezittingen" subtitle={eur(aTot)}>{rows("a", assets)}</Card>
         <Card title="Schulden" subtitle={eur(lTot)}>{rows("l", liab)}</Card>
+      </div>
+
+      <div className="ctrls" style={{ marginTop: 10 }}>
+        <button className="vadd" onClick={pullNicheBay} disabled={nbBusy}>{nbBusy ? "Bezig…" : "↻ NicheBay saldo ophalen"}</button>
+        {nbMsg && <span className="dim" style={{ fontSize: 13 }}>{nbMsg}</span>}
       </div>
 
       {curve.length > 0 && (
@@ -636,6 +657,7 @@ function ImportPanel({ onDone, onReload, cats }: any) {
   const [busy, setBusy] = useState(false);
   const [res, setRes] = useState<any>(null);
   const [pending, setPending] = useState<any[]>([]);
+  const [income, setIncome] = useState<any[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [source, setSource] = useState("rabobank");
@@ -649,11 +671,11 @@ function ImportPanel({ onDone, onReload, cats }: any) {
 
   // wachtrij ophalen bij openen (blijft staan na herladen)
   useEffect(() => {
-    fetch(`/api/import`).then((r) => r.json()).then((r) => { if (r.ok) setPending(r.pending || []); }).catch(() => {});
+    fetch(`/api/import`).then((r) => r.json()).then((r) => { if (r.ok) { setPending(r.pending || []); setIncome(r.income || []); } }).catch(() => {});
   }, []);
 
   const refreshPending = async () => {
-    try { const r = await fetch(`/api/import`).then((x) => x.json()); if (r.ok) setPending(r.pending || []); } catch {}
+    try { const r = await fetch(`/api/import`).then((x) => x.json()); if (r.ok) { setPending(r.pending || []); setIncome(r.income || []); } } catch {}
   };
 
   const upload = async (file: File) => {
@@ -664,6 +686,7 @@ function ImportPanel({ onDone, onReload, cats }: any) {
       if (!r.ok) throw new Error(r.error || "Import mislukt");
       setRes(r);
       setPending(r.pending || []);
+      setIncome(r.income || []);
     } catch (e: any) { setErr(e.message); }
     finally { setBusy(false); }
   };
@@ -768,6 +791,36 @@ function ImportPanel({ onDone, onReload, cats }: any) {
                       sel={psel.has(e.id)} onSel={() => togglePsel(e.id)}
                       show={(k: string) => ["date", "omschrijving", "category", "bedrag"].includes(k)}
                       onCat={editCat} onLabel={editLabel} onNote={() => {}} onApprove={(x: any) => approve([x.id])} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        );
+      })()}
+
+      {income.length > 0 && (() => {
+        const real = income.filter((e: any) => e.category !== "Transfer");
+        const transf = income.filter((e: any) => e.category === "Transfer");
+        const totReal = real.reduce((a, e) => a + (e.bedrag || 0), 0);
+        const totTransf = transf.reduce((a, e) => a + (e.bedrag || 0), 0);
+        return (
+          <Card title="Inkomend — geld dat binnenkwam" subtitle={`${income.length} regels · echt inkomend ${eur(totReal)} · eigen overboekingen ${eur(totTransf)}`}>
+            <p className="muted" style={{ marginTop: 0 }}>
+              Alleen ter info en voor je cashflow (erin/eruit). Dit telt <b>niet</b> mee in je winst — je omzet komt uit Shopify.
+              "Inkomsten" zijn o.a. je Shopify-uitbetalingen; "Transfer" is geld tussen je eigen rekeningen.
+            </p>
+            <div className="table-wrap">
+              <table className="table">
+                <thead><tr><th>Datum</th><th>Omschrijving</th><th>Type</th><th className="r">Bedrag</th></tr></thead>
+                <tbody>
+                  {income.map((e: any, i: number) => (
+                    <tr key={e.id || i}>
+                      <td className="nowrap">{e.date ? ddmmyyyy(e.date) : "—"}</td>
+                      <td title={e.omschrijving}>{e.omschrijving}</td>
+                      <td><span className={`pill ${e.category === "Transfer" ? "pill-dim" : "pill-up"}`}>{e.category === "Transfer" ? "Transfer" : "Inkomsten"}</span></td>
+                      <td className="r mono strong green">+{eur(e.bedrag)}</td>
+                    </tr>
                   ))}
                 </tbody>
               </table>

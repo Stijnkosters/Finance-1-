@@ -81,3 +81,42 @@ export async function fetchNicheBayCostByOrder(maxPages = 20, limit = 100) {
   }
   return { map, sample };
 }
+
+// Probeert de gangbare endpoints om je wallet/accountsaldo te vinden.
+const BALANCE_PATHS = ["/finances", "/finance", "/account", "/account/info", "/wallet", "/balance", "/user", "/user/info", "/userinfo", "/shop", "/shop/info", "/me"];
+const BALANCE_FIELDS = ["balance", "available_balance", "wallet_balance", "account_balance", "saldo", "available", "amount", "remain", "remaining", "money", "wallet", "credit"];
+
+function deepFindNumber(obj: any, fields: string[], depth = 0): { field: string; value: number } | null {
+  if (!obj || typeof obj !== "object" || depth > 4) return null;
+  for (const k of Object.keys(obj)) {
+    const lk = k.toLowerCase();
+    if (fields.some((f) => lk === f || lk.includes(f))) {
+      const n = toNum(obj[k]);
+      if (obj[k] != null && obj[k] !== "" && !isNaN(n)) return { field: k, value: n };
+    }
+  }
+  for (const k of Object.keys(obj)) {
+    const r = deepFindNumber(obj[k], fields, depth + 1);
+    if (r) return r;
+  }
+  return null;
+}
+
+export async function nbProbeBalance() {
+  const results: any[] = [];
+  let found: { path: string; field: string; value: number } | null = null;
+  for (const p of BALANCE_PATHS) {
+    try {
+      const res = await fetch(`${BASE}${p}`, { headers: { Authorization: `Bearer ${KEY}`, Accept: "application/json" }, cache: "no-store" });
+      const text = await res.text();
+      let json: any = null;
+      try { json = JSON.parse(text); } catch {}
+      const guess = json ? deepFindNumber(json.data ?? json, BALANCE_FIELDS) : null;
+      results.push({ path: p, status: res.status, ok: res.ok, body: text.slice(0, 400), guess });
+      if (!found && res.ok && json && json.success !== false && guess) found = { path: p, ...guess };
+    } catch (e: any) {
+      results.push({ path: p, error: e.message });
+    }
+  }
+  return { found, results };
+}

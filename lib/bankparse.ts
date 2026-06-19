@@ -96,6 +96,7 @@ function parseWise(lines: string[], delim: string, header: string[], exclude: st
   let endBalance: any = null;
   const monthBal: Record<string, { amount: number; date: string }> = {};
   const flow: Record<string, { in: number; out: number }> = {};
+  const incomeRows: any[] = [];
 
   for (let r = 1; r < lines.length; r++) {
     const cols = splitCsvLine(lines[r], delim).map((c) => c.replace(/^"|"$/g, ""));
@@ -115,7 +116,17 @@ function parseWise(lines: string[], delim: string, header: string[], exclude: st
       if (dir === "OUT") flow[mk].out += Math.abs(amt); else if (dir === "IN") flow[mk].in += Math.abs(amt);
     }
 
-    if (dir !== "OUT") { income++; continue; } // alleen geld eruit
+    if (dir !== "OUT") {
+      if (dir === "IN" && date) {
+        const t = iTgt >= 0 ? cols[iTgt] : "";
+        const rf = iRef >= 0 ? cols[iRef] : "";
+        const nt = iNote >= 0 ? cols[iNote] : "";
+        const d = [t, rf || nt].filter(Boolean).join(" — ").trim() || "(Wise inkomend)";
+        const a = Math.abs(parseAmount(iAmt >= 0 ? cols[iAmt] : "0"));
+        if (a) incomeRows.push({ date, omschrijving: d.slice(0, 120), methode: "WISE", bedrag: a, category: TRANSFER_RE.test(d) ? "Transfer" : "Inkomsten" });
+      }
+      income++; continue;
+    } // alleen geld eruit telt als uitgave
     if (!date) continue;
 
     const cur = (iCur >= 0 ? cols[iCur] : "EUR").toUpperCase();
@@ -141,7 +152,7 @@ function parseWise(lines: string[], delim: string, header: string[], exclude: st
   const monthlyBalances: Record<string, number> = {};
   for (const k of Object.keys(monthBal)) monthlyBalances[k] = monthBal[k].amount;
 
-  return { expenses, stats: { total: lines.length - 1, added: expenses.length, excluded, income, transfers }, header, source: "Wise", endBalance, monthlyBalances, monthlyFlow: flow };
+  return { expenses, stats: { total: lines.length - 1, added: expenses.length, excluded, income, transfers }, header, source: "Wise", endBalance, monthlyBalances, monthlyFlow: flow, incomeRows };
 }
 
 export function parseBankCsv(text: string, sourceKey = "rabobank") {
@@ -149,7 +160,7 @@ export function parseBankCsv(text: string, sourceKey = "rabobank") {
   const exclude = [...EXCLUDE_DEFAULT, ...envExclude, ...(src.type === "paypal" ? PAYPAL_EXTRA_EXCLUDE : [])];
 
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
-  if (!lines.length) return { expenses: [], stats: { total: 0, added: 0, excluded: 0, income: 0, transfers: 0 }, header: [], source: src.name, endBalance: null, monthlyBalances: {}, monthlyFlow: {} };
+  if (!lines.length) return { expenses: [], stats: { total: 0, added: 0, excluded: 0, income: 0, transfers: 0 }, header: [], source: src.name, endBalance: null, monthlyBalances: {}, monthlyFlow: {}, incomeRows: [] };
 
   const delim = lines[0].split(";").length > lines[0].split(",").length ? ";" : ",";
   const header = splitCsvLine(lines[0], delim).map((h) => h.trim().toLowerCase().replace(/"/g, ""));
@@ -177,6 +188,7 @@ export function parseBankCsv(text: string, sourceKey = "rabobank") {
   let endBalance: any = null;
   const monthBal: Record<string, { amount: number; date: string }> = {};
   const flow: Record<string, { in: number; out: number }> = {};
+  const incomeRows: any[] = [];
 
   for (let r = 1; r < lines.length; r++) {
     const cols = splitCsvLine(lines[r], delim).map((c) => c.replace(/^"|"$/g, ""));
@@ -239,7 +251,9 @@ export function parseBankCsv(text: string, sourceKey = "rabobank") {
         expenses.push({ date, omschrijving: ("Refund — " + desc).slice(0, 120), methode: src.label, bedrag: -Math.abs(amount), category: rcat });
         continue;
       }
-      income++; continue; // overige inkomsten (uitbetalingen, transfers) = alleen cashflow "erin"
+      income++;
+      incomeRows.push({ date, omschrijving: desc.slice(0, 120), methode: src.label, bedrag: Math.abs(amount), category: TRANSFER_RE.test(desc) ? "Transfer" : "Inkomsten" });
+      continue; // overige inkomsten (uitbetalingen, transfers) = cashflow "erin" + inkomstenlijst
     }
     if (amount === 0) { income++; continue; }
     // amount < 0 -> uitgave
@@ -255,7 +269,7 @@ export function parseBankCsv(text: string, sourceKey = "rabobank") {
   const monthlyBalances: Record<string, number> = {};
   for (const k of Object.keys(monthBal)) monthlyBalances[k] = monthBal[k].amount;
 
-  return { expenses, stats: { total: lines.length - 1, added: expenses.length, excluded, income, transfers }, header, source: src.name, endBalance, monthlyBalances, monthlyFlow: flow };
+  return { expenses, stats: { total: lines.length - 1, added: expenses.length, excluded, income, transfers }, header, source: src.name, endBalance, monthlyBalances, monthlyFlow: flow, incomeRows };
 }
 
 export function dedupKey(e: any): string {

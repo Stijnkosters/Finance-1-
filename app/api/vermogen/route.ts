@@ -27,10 +27,22 @@ function capKey(name: string, captured: any) {
   if (!name) return null;
   return Object.keys(captured || {}).find((k) => name.toLowerCase().includes(k.toLowerCase())) || null;
 }
-// Saldo's uit de CSV-imports automatisch in de bezittingen verwerken
-function mergeAssets(assets: any[], captured: any) {
+
+// captured-saldo's splitsen: creditcards = schuld, rest = bezitting
+function splitCaptured(captured: any) {
+  const assets: any = {}, liabs: any = {};
+  for (const k of Object.keys(captured || {})) {
+    const c = captured[k];
+    if (c && c.type === "creditcard") liabs[k] = { amount: Math.abs(Number(c.amount) || 0), date: c.date };
+    else assets[k] = { amount: Number(c.amount) || 0, date: c.date };
+  }
+  return { assets, liabs };
+}
+
+// CSV-saldo's automatisch in de juiste regels verwerken (bezitting óf schuld)
+function mergeCaptured(rows: any[], captured: any) {
   const used = new Set<string>();
-  const merged = (assets || []).map((a) => {
+  const merged = (rows || []).map((a) => {
     const k = capKey(a.name, captured);
     if (k) { used.add(k); return { ...a, amount: captured[k].amount, capturedDate: captured[k].date }; }
     return a;
@@ -47,8 +59,12 @@ export async function GET() {
   const v = await readJson("vermogen.json", null) || SEED;
   const captured = await readJson("balances.json", {});
   const hist = await readJson("balances-history.json", {});
-  const assets = mergeAssets(v.assets, captured);
-  const liabTotal = sum(v.liabilities || []);
+  const { assets: capA, liabs: capL } = splitCaptured(captured);
+  const assets = mergeCaptured(v.assets, capA);
+  const liabilities = mergeCaptured(v.liabilities, capL);
+  const assetsTotal = Math.round(sum(assets) * 100) / 100;
+  const liabTotal = Math.round(sum(liabilities) * 100) / 100;
+  const netNow = Math.round((assetsTotal - liabTotal) * 100) / 100;
 
   // rekeningen mét maandhistorie (uit CSV) vs zonder (handmatig, vlak doorgetrokken)
   const histSources = Object.keys(hist);
@@ -74,7 +90,7 @@ export async function GET() {
     return { month: m, net: Math.round((total - liabTotal) * 100) / 100, in: Math.round(inn * 100) / 100, out: Math.round(out * 100) / 100 };
   });
 
-  return NextResponse.json({ ok: true, assets, liabilities: v.liabilities, snapshots: v.snapshots || [], captured, monthlyNetWorth: curve, hasHistory: histSources.length > 0, persisted: persistenceEnabled() });
+  return NextResponse.json({ ok: true, assets, liabilities, assetsTotal, liabTotal, netNow, snapshots: v.snapshots || [], captured, monthlyNetWorth: curve, hasHistory: histSources.length > 0, persisted: persistenceEnabled() });
 }
 
 export async function POST(req: Request) {
@@ -86,11 +102,12 @@ export async function POST(req: Request) {
     if (body.action === "snapshot") {
       const month = body.month || new Date().toISOString().slice(0, 7);
       const captured = await readJson("balances.json", {});
-      const assets = mergeAssets(cur.assets || [], captured);
-      const liabilities = cur.liabilities || [];
-      const net = sum(assets) - sum(liabilities);
+      const { assets: capA, liabs: capL } = splitCaptured(captured);
+      const assets = mergeCaptured(cur.assets || [], capA);
+      const liabilities = mergeCaptured(cur.liabilities || [], capL);
+      const net = Math.round((sum(assets) - sum(liabilities)) * 100) / 100;
       const snaps = (cur.snapshots || []).filter((s: any) => s.month !== month);
-      snaps.push({ month, date: new Date().toISOString().slice(0, 10), net, assetsTotal: sum(assets), liabTotal: sum(liabilities) });
+      snaps.push({ month, date: new Date().toISOString().slice(0, 10), net, assetsTotal: Math.round(sum(assets) * 100) / 100, liabTotal: Math.round(sum(liabilities) * 100) / 100 });
       snaps.sort((a: any, b: any) => a.month.localeCompare(b.month));
       await writeJson("vermogen.json", { ...cur, snapshots: snaps });
       return NextResponse.json({ ok: true, snapshots: snaps });

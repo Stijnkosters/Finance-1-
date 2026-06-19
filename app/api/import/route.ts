@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { parseBankCsv, dedupKey } from "@/lib/bankparse";
+import { parseBankCsv, dedupKey, SOURCES } from "@/lib/bankparse";
 import { readJson, writeJson, persistenceEnabled } from "@/lib/store";
 import { decorate } from "@/lib/meta";
 
@@ -12,10 +12,18 @@ async function decoratedPending() {
   return decorate(pending, meta, rules).filter((e: any) => !e.deleted);
 }
 
+async function recentIncome() {
+  const inc: any[] = await readJson("income.json", []);
+  return inc
+    .map((e) => ({ ...e, id: dedupKey(e) }))
+    .sort((a, b) => (a.date < b.date ? 1 : -1))
+    .slice(0, 400);
+}
+
 // Huidige wachtrij ophalen (zodat hij blijft staan na herladen)
 export async function GET() {
-  if (!persistenceEnabled()) return NextResponse.json({ ok: true, pending: [] });
-  return NextResponse.json({ ok: true, pending: await decoratedPending() });
+  if (!persistenceEnabled()) return NextResponse.json({ ok: true, pending: [], income: [] });
+  return NextResponse.json({ ok: true, pending: await decoratedPending(), income: await recentIncome() });
 }
 
 // Importeren -> in de wachtrij zetten (nog NIET meegeteld)
@@ -26,7 +34,7 @@ export async function POST(req: Request) {
     if (!body || body.length < 10) {
       return NextResponse.json({ ok: false, error: "Leeg of ongeldig bestand." }, { status: 400 });
     }
-    const { expenses, stats, source: sourceName, endBalance, monthlyBalances, monthlyFlow } = parseBankCsv(body, source);
+    const { expenses, stats, source: sourceName, endBalance, monthlyBalances, monthlyFlow, incomeRows } = parseBankCsv(body, source);
 
     let staged = 0, duplicates = 0;
     if (persistenceEnabled() && expenses.length) {
@@ -48,8 +56,9 @@ export async function POST(req: Request) {
     if (persistenceEnabled() && endBalance) {
       const balances = await readJson("balances.json", {});
       const prev = balances[sourceName];
+      const stype = SOURCES[source]?.type || "bank";
       if (!prev || endBalance.date >= prev.date) {
-        balances[sourceName] = { amount: endBalance.amount, date: endBalance.date };
+        balances[sourceName] = { amount: endBalance.amount, date: endBalance.date, type: stype };
         await writeJson("balances.json", balances);
       }
     }
@@ -65,6 +74,20 @@ export async function POST(req: Request) {
       cf[sourceName] = { ...(cf[sourceName] || {}), ...monthlyFlow };
       await writeJson("cashflow-history.json", cf);
     }
+    // inkomende betalingen bewaren (dedup) — alleen ter info / cashflow, telt niet in P&L
+    let incomeStaged = 0;
+    if (persistenceEnabled() && incomeRows && incomeRows.length) {
+      const inc: any[] = await readJson("income.json", []);
+      const seenI = new Set(inc.map(dedupKey));
+      const addI = incomeRows.filter((e: any) => {
+        const k = dedupKey(e);
+        if (seenI.has(k)) return false;
+        seenI.add(k);
+        return true;
+      });
+      if (addI.length) await writeJson("income.json", [...inc, ...addI]);
+      incomeStaged = addI.length;
+    }
 
     return NextResponse.json({
       ok: true,
@@ -72,9 +95,11 @@ export async function POST(req: Request) {
       parsed: expenses.length,
       staged,
       duplicates,
+      incomeStaged,
       persisted: persistenceEnabled(),
       stats,
       pending: persistenceEnabled() ? await decoratedPending() : [],
+      income: persistenceEnabled() ? await recentIncome() : [],
       note: !persistenceEnabled()
         ? "Geen opslag actief: voeg een Railway Volume toe en zet DATA_DIR, anders wordt de import niet bewaard."
         : expenses.length === 0
@@ -94,6 +119,7 @@ export async function DELETE(req: Request) {
     }
     const what = new URL(req.url).searchParams.get("what");
     if (what === "pending") await writeJson("pending-import.json", []);
+    else if (what === "income") await writeJson("income.json", []);
     else await writeJson("imported-expenses.json", []);
     return NextResponse.json({ ok: true });
   } catch (e: any) {
