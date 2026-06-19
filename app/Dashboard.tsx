@@ -453,7 +453,7 @@ export default function Dashboard() {
           </>
         )}
 
-        {tab === "balans" && <VermogenPanel />}
+        {tab === "balans" && <VermogenPanel onMonth={(m: string) => { setExpMonth(m); setTab("uitgaves"); }} />}
 
         {tab === "import" && <ImportPanel onDone={load} onReload={reloadData} cats={data.categories || []} />}
       </main>
@@ -461,7 +461,7 @@ export default function Dashboard() {
   );
 }
 
-function VermogenPanel() {
+function VermogenPanel({ onMonth }: any) {
   const [assets, setAssets] = useState<any[]>([]);
   const [liab, setLiab] = useState<any[]>([]);
   const [snaps, setSnaps] = useState<any[]>([]);
@@ -560,7 +560,7 @@ function VermogenPanel() {
       </div>
 
       {curve.length > 0 && (
-        <Card title="Vermogen per maand" subtitle="automatisch uit je geïmporteerde saldo's">
+        <Card title="Vermogen per maand" subtitle="klik een maand voor de transacties">
           <ResponsiveContainer width="100%" height={200}>
             <AreaChart data={curve.map((c) => ({ ...c, label: monthLabel(c.month) }))}>
               <defs><linearGradient id="vg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#0E8A52" stopOpacity={0.25} /><stop offset="100%" stopColor="#0E8A52" stopOpacity={0} /></linearGradient></defs>
@@ -573,16 +573,17 @@ function VermogenPanel() {
           </ResponsiveContainer>
           <div className="table-wrap" style={{ marginTop: 8 }}>
             <table className="table">
-              <thead><tr><th>Maand</th><th className="r">Netto vermogen</th><th className="r">Verschil</th></tr></thead>
+              <thead><tr><th>Maand</th><th className="r">Netto vermogen</th><th className="r">Verschil</th><th></th></tr></thead>
               <tbody>
                 {[...curve].reverse().map((s, i, arr) => {
                   const prev = arr[i + 1];
                   const delta = prev ? s.net - prev.net : null;
                   return (
-                    <tr key={s.month}>
+                    <tr key={s.month} className="clickrow" onClick={() => onMonth && onMonth(s.month)}>
                       <td className="nowrap">{monthLabel(s.month)}</td>
                       <td className="r mono strong">{eur(s.net)}</td>
                       <td className={`r mono ${delta == null ? "dim" : delta >= 0 ? "green" : "red"}`}>{delta == null ? "—" : `${delta >= 0 ? "▲" : "▼"} ${eur(Math.abs(delta))}`}</td>
+                      <td className="r dim" style={{ fontSize: 12 }}>transacties →</td>
                     </tr>
                   );
                 })}

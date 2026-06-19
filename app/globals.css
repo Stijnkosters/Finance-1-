@@ -159,3 +159,6 @@ tr.selrow{background:var(--accent-soft)}
 .vcap{font:inherit;font-size:11.5px;font-weight:600;padding:4px 9px;border:1px solid var(--accent);border-radius:999px;background:var(--accent-soft);color:var(--accent);cursor:pointer;white-space:nowrap}
 
 .vcapok{font-size:11px;font-weight:600;color:var(--up);background:var(--up-soft);padding:3px 9px;border-radius:999px;white-space:nowrap}
+
+.clickrow{cursor:pointer}
+.clickrow:hover{background:var(--accent-soft)}
