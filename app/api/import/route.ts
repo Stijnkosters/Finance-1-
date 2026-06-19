@@ -26,7 +26,7 @@ export async function POST(req: Request) {
     if (!body || body.length < 10) {
       return NextResponse.json({ ok: false, error: "Leeg of ongeldig bestand." }, { status: 400 });
     }
-    const { expenses, stats, source: sourceName, endBalance } = parseBankCsv(body, source);
+    const { expenses, stats, source: sourceName, endBalance, monthlyBalances } = parseBankCsv(body, source);
 
     let staged = 0, duplicates = 0;
     if (persistenceEnabled() && expenses.length) {
@@ -52,6 +52,12 @@ export async function POST(req: Request) {
         balances[sourceName] = { amount: endBalance.amount, date: endBalance.date };
         await writeJson("balances.json", balances);
       }
+    }
+    // maand-eindsaldo's bewaren (voor de vermogenscurve vanaf het begin)
+    if (persistenceEnabled() && monthlyBalances && Object.keys(monthlyBalances).length) {
+      const hist = await readJson("balances-history.json", {});
+      hist[sourceName] = { ...(hist[sourceName] || {}), ...monthlyBalances };
+      await writeJson("balances-history.json", hist);
     }
 
     return NextResponse.json({

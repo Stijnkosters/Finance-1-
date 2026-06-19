@@ -89,6 +89,7 @@ function parseWise(lines: string[], delim: string, header: string[], exclude: st
   const expenses: any[] = [];
   let excluded = 0, income = 0, transfers = 0;
   let endBalance: any = null;
+  const monthBal: Record<string, { amount: number; date: string }> = {};
 
   for (let r = 1; r < lines.length; r++) {
     const cols = splitCsvLine(lines[r], delim).map((c) => c.replace(/^"|"$/g, ""));
@@ -98,6 +99,8 @@ function parseWise(lines: string[], delim: string, header: string[], exclude: st
     if (date && iBal >= 0 && cols[iBal]) {
       const bal = parseAmount(cols[iBal]);
       if (!endBalance || date >= endBalance.date) endBalance = { amount: bal, date };
+      const mk = date.slice(0, 7);
+      if (!monthBal[mk] || date >= monthBal[mk].date) monthBal[mk] = { amount: bal, date };
     }
 
     if (dir !== "OUT") { income++; continue; } // alleen geld eruit
@@ -123,7 +126,10 @@ function parseWise(lines: string[], delim: string, header: string[], exclude: st
     expenses.push({ date, omschrijving: desc.slice(0, 120), methode: "WISE", bedrag: Math.abs(amount), category });
   }
 
-  return { expenses, stats: { total: lines.length - 1, added: expenses.length, excluded, income, transfers }, header, source: "Wise", endBalance };
+  const monthlyBalances: Record<string, number> = {};
+  for (const k of Object.keys(monthBal)) monthlyBalances[k] = monthBal[k].amount;
+
+  return { expenses, stats: { total: lines.length - 1, added: expenses.length, excluded, income, transfers }, header, source: "Wise", endBalance, monthlyBalances };
 }
 
 export function parseBankCsv(text: string, sourceKey = "rabobank") {
@@ -131,7 +137,7 @@ export function parseBankCsv(text: string, sourceKey = "rabobank") {
   const exclude = [...EXCLUDE_DEFAULT, ...envExclude, ...(src.type === "paypal" ? PAYPAL_EXTRA_EXCLUDE : [])];
 
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
-  if (!lines.length) return { expenses: [], stats: { total: 0, added: 0, excluded: 0, income: 0, transfers: 0 }, header: [], source: src.name, endBalance: null };
+  if (!lines.length) return { expenses: [], stats: { total: 0, added: 0, excluded: 0, income: 0, transfers: 0 }, header: [], source: src.name, endBalance: null, monthlyBalances: {} };
 
   const delim = lines[0].split(";").length > lines[0].split(",").length ? ";" : ",";
   const header = splitCsvLine(lines[0], delim).map((h) => h.trim().toLowerCase().replace(/"/g, ""));
@@ -157,6 +163,7 @@ export function parseBankCsv(text: string, sourceKey = "rabobank") {
   const expenses: any[] = [];
   let excluded = 0, income = 0, transfers = 0;
   let endBalance: any = null;
+  const monthBal: Record<string, { amount: number; date: string }> = {};
 
   for (let r = 1; r < lines.length; r++) {
     const cols = splitCsvLine(lines[r], delim).map((c) => c.replace(/^"|"$/g, ""));
@@ -167,6 +174,8 @@ export function parseBankCsv(text: string, sourceKey = "rabobank") {
     if (balIdx >= 0 && cols[balIdx] != null && cols[balIdx] !== "") {
       const bal = parseAmount(cols[balIdx]);
       if (!endBalance || date >= endBalance.date) endBalance = { amount: bal, date };
+      const mk = date.slice(0, 7);
+      if (!monthBal[mk] || date >= monthBal[mk].date) monthBal[mk] = { amount: bal, date };
     }
 
     const isExpense = src.type === "creditcard" ? amount > 0 : amount < 0;
@@ -186,7 +195,10 @@ export function parseBankCsv(text: string, sourceKey = "rabobank") {
     expenses.push({ date, omschrijving: desc.slice(0, 120), methode: src.label, bedrag: Math.abs(amount), category });
   }
 
-  return { expenses, stats: { total: lines.length - 1, added: expenses.length, excluded, income, transfers }, header, source: src.name, endBalance };
+  const monthlyBalances: Record<string, number> = {};
+  for (const k of Object.keys(monthBal)) monthlyBalances[k] = monthBal[k].amount;
+
+  return { expenses, stats: { total: lines.length - 1, added: expenses.length, excluded, income, transfers }, header, source: src.name, endBalance, monthlyBalances };
 }
 
 export function dedupKey(e: any): string {

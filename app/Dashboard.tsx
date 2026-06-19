@@ -466,6 +466,7 @@ function VermogenPanel() {
   const [liab, setLiab] = useState<any[]>([]);
   const [snaps, setSnaps] = useState<any[]>([]);
   const [captured, setCaptured] = useState<any>({});
+  const [curve, setCurve] = useState<any[]>([]);
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [persisted, setPersisted] = useState(true);
   const [saved, setSaved] = useState(false);
@@ -473,7 +474,7 @@ function VermogenPanel() {
   const load = async () => {
     try {
       const r = await fetch("/api/vermogen").then((x) => x.json());
-      if (r.ok) { setAssets(r.assets || []); setLiab(r.liabilities || []); setSnaps(r.snapshots || []); setCaptured(r.captured || {}); setPersisted(r.persisted !== false); }
+      if (r.ok) { setAssets(r.assets || []); setLiab(r.liabilities || []); setSnaps(r.snapshots || []); setCaptured(r.captured || {}); setCurve(r.monthlyNetWorth || []); setPersisted(r.persisted !== false); }
     } catch {}
   };
   useEffect(() => { load(); }, []);
@@ -557,6 +558,42 @@ function VermogenPanel() {
         <Card title="Bezittingen" subtitle={eur(aTot)}>{rows("a", assets)}</Card>
         <Card title="Schulden" subtitle={eur(lTot)}>{rows("l", liab)}</Card>
       </div>
+
+      {curve.length > 0 && (
+        <Card title="Vermogen per maand" subtitle="automatisch uit je geïmporteerde saldo's">
+          <ResponsiveContainer width="100%" height={200}>
+            <AreaChart data={curve.map((c) => ({ ...c, label: monthLabel(c.month) }))}>
+              <defs><linearGradient id="vg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#0E8A52" stopOpacity={0.25} /><stop offset="100%" stopColor="#0E8A52" stopOpacity={0} /></linearGradient></defs>
+              <CartesianGrid vertical={false} stroke="#EEF0F4" />
+              <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#8A909C" }} tickLine={false} axisLine={false} />
+              <YAxis tick={{ fontSize: 11, fill: "#8A909C" }} tickLine={false} axisLine={false} width={52} tickFormatter={(v) => (v / 1000).toFixed(0) + "k"} />
+              <Tooltip formatter={(v: any) => eur(v)} labelStyle={{ color: "#1A1D24" }} />
+              <Area type="monotone" dataKey="net" stroke="#0E8A52" strokeWidth={2} fill="url(#vg)" />
+            </AreaChart>
+          </ResponsiveContainer>
+          <div className="table-wrap" style={{ marginTop: 8 }}>
+            <table className="table">
+              <thead><tr><th>Maand</th><th className="r">Netto vermogen</th><th className="r">Verschil</th></tr></thead>
+              <tbody>
+                {[...curve].reverse().map((s, i, arr) => {
+                  const prev = arr[i + 1];
+                  const delta = prev ? s.net - prev.net : null;
+                  return (
+                    <tr key={s.month}>
+                      <td className="nowrap">{monthLabel(s.month)}</td>
+                      <td className="r mono strong">{eur(s.net)}</td>
+                      <td className={`r mono ${delta == null ? "dim" : delta >= 0 ? "green" : "red"}`}>{delta == null ? "—" : `${delta >= 0 ? "▲" : "▼"} ${eur(Math.abs(delta))}`}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>
+            Gebaseerd op rekeningen met saldo in de CSV (Rabobank, Revolut, Wise-statement). Rekeningen zonder saldo-historie staan vlak op hun huidige waarde. Upload je CSV's vanaf januari om de hele curve te vullen.
+          </p>
+        </Card>
+      )}
 
       <Card title="Maand vastleggen" subtitle="bewaar je vermogen aan het eind van de maand">
         <div className="ctrls" style={{ marginBottom: 14 }}>

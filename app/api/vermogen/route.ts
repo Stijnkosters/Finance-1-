@@ -46,7 +46,28 @@ function mergeAssets(assets: any[], captured: any) {
 export async function GET() {
   const v = await readJson("vermogen.json", null) || SEED;
   const captured = await readJson("balances.json", {});
-  return NextResponse.json({ ok: true, assets: mergeAssets(v.assets, captured), liabilities: v.liabilities, snapshots: v.snapshots || [], captured, persisted: persistenceEnabled() });
+  const hist = await readJson("balances-history.json", {});
+  const assets = mergeAssets(v.assets, captured);
+  const liabTotal = sum(v.liabilities || []);
+
+  // rekeningen mét maandhistorie (uit CSV) vs zonder (handmatig, vlak doorgetrokken)
+  const histSources = Object.keys(hist);
+  const flatAssets = assets.filter((a: any) => !histSources.some((s) => a.name && (a.name.toLowerCase().includes(s.toLowerCase()) || s.toLowerCase().includes(a.name.toLowerCase()))));
+  const flatTotal = sum(flatAssets);
+
+  const monthsSet = new Set<string>();
+  for (const s of histSources) for (const m of Object.keys(hist[s])) monthsSet.add(m);
+  const months = [...monthsSet].sort();
+  const curve = months.map((m) => {
+    let total = flatTotal;
+    for (const s of histSources) {
+      const ms = Object.keys(hist[s]).filter((x) => x <= m).sort();
+      if (ms.length) total += Number(hist[s][ms[ms.length - 1]]) || 0;
+    }
+    return { month: m, net: Math.round((total - liabTotal) * 100) / 100 };
+  });
+
+  return NextResponse.json({ ok: true, assets, liabilities: v.liabilities, snapshots: v.snapshots || [], captured, monthlyNetWorth: curve, hasHistory: histSources.length > 0, persisted: persistenceEnabled() });
 }
 
 export async function POST(req: Request) {
