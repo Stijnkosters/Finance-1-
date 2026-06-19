@@ -61,9 +61,10 @@ export async function GET(req: Request) {
       bucket.revenue += parseFloat(o.subtotalPriceSet?.shopMoney?.amount || "0");
       bucket.refunds += parseFloat(o.totalRefundedSet?.shopMoney?.amount || "0");
 
-      // Match deze Shopify-order op NicheBay-kostprijs (ordernummer zonder '#')
+      // Match deze Shopify-order op NicheBay-kostprijs (ordernummer of order-ID)
       const orderNo = String(o.name || "").replace(/^#/, "").trim();
-      const nbCost = nbMap[orderNo];
+      const numId = String(o.id || "").split("/").pop() || "";
+      const nbCost = nbMap[orderNo] ?? (numId ? nbMap[numId] : undefined);
       const hasNb = nbCost != null;
       if (hasNb) nbMatched += 1;
 

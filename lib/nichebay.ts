@@ -31,9 +31,9 @@ const ORDER_NO_FIELDS = [
   "platform_order", "third_order_no", "channel_order_no",
 ];
 const COST_FIELDS = [
-  "total_cost", "cost_total", "order_cost", "cost", "cost_price", "total_price",
-  "total_amount", "amount", "pay_amount", "paid_amount", "product_cost",
-  "goods_cost", "total", "order_amount", "settle_amount",
+  "store_pay_fee", "pay_fee", "total_cost", "cost_total", "order_cost",
+  "cost", "cost_price", "pay_amount", "paid_amount", "product_cost",
+  "goods_cost", "settle_amount",
 ];
 
 function pick(obj: any, keys: string[]) {
@@ -65,9 +65,11 @@ export async function fetchNicheBayCostByOrder(maxPages = 20, limit = 100) {
     if (!Array.isArray(list) || list.length === 0) break;
     if (!sample) sample = list[0];
     for (const o of list) {
-      const no = normNo(pick(o, ORDER_NO_FIELDS));
       const cost = toNum(pick(o, COST_FIELDS));
-      if (no) map[no] = (map[no] || 0) + cost;
+      const keys = new Set(
+        [o.order_number, o.order_sn, pick(o, ORDER_NO_FIELDS)].map(normNo).filter(Boolean)
+      );
+      for (const k of keys) map[k] = cost;
     }
     if (list.length < limit) break;
   }
