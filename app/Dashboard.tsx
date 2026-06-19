@@ -484,59 +484,85 @@ export default function Dashboard() {
 function ImportPanel({ onDone, onReload, cats }: any) {
   const [busy, setBusy] = useState(false);
   const [res, setRes] = useState<any>(null);
+  const [pending, setPending] = useState<any[]>([]);
   const [err, setErr] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
   const [source, setSource] = useState("rabobank");
 
   const SOURCE_OPTIONS = [
-    ["rabobank", "Rabobank"],
-    ["wise", "Wise"],
-    ["revolut", "Revolut"],
-    ["rabo_cc", "Rabo creditcard"],
-    ["amex", "American Express"],
-    ["paypal", "PayPal"],
-    ["anders", "Anders"],
+    ["rabobank", "Rabobank"], ["wise", "Wise"], ["revolut", "Revolut"],
+    ["rabo_cc", "Rabo creditcard"], ["amex", "American Express"], ["paypal", "PayPal"], ["anders", "Anders"],
   ];
 
+  // wachtrij ophalen bij openen (blijft staan na herladen)
+  useEffect(() => {
+    fetch(`/api/import`).then((r) => r.json()).then((r) => { if (r.ok) setPending(r.pending || []); }).catch(() => {});
+  }, []);
+
+  const refreshPending = async () => {
+    try { const r = await fetch(`/api/import`).then((x) => x.json()); if (r.ok) setPending(r.pending || []); } catch {}
+  };
+
   const upload = async (file: File) => {
-    setBusy(true); setErr(null); setRes(null);
+    setBusy(true); setErr(null); setMsg(null); setRes(null);
     try {
       const text = await file.text();
       const r = await fetch(`/api/import?source=${source}`, { method: "POST", headers: { "Content-Type": "text/plain" }, body: text }).then((x) => x.json());
       if (!r.ok) throw new Error(r.error || "Import mislukt");
       setRes(r);
-      onDone && onDone();
+      setPending(r.pending || []);
     } catch (e: any) { setErr(e.message); }
     finally { setBusy(false); }
   };
 
   const editCat = async (e: any, category: string) => {
-    setRes((r: any) => ({ ...r, preview: r.preview.map((x: any) => (x.id === e.id ? { ...x, category } : x)) }));
+    setPending((p) => p.map((x) => (x.id === e.id ? { ...x, category } : x)));
     try {
       await fetch(`/api/expense`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: e.id, mkey: e.mkey, category, remember: true }) });
-      onReload && onReload();
+      await refreshPending(); onReload && onReload();
     } catch {}
   };
   const editLabel = async (e: any, label: string) => {
-    setRes((r: any) => ({ ...r, preview: r.preview.map((x: any) => (x.id === e.id ? { ...x, label } : x)) }));
+    setPending((p) => p.map((x) => (x.id === e.id ? { ...x, label } : x)));
     try {
       await fetch(`/api/expense`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: e.id, mkey: e.mkey, label, remember: true }) });
-      onReload && onReload();
+      await refreshPending(); onReload && onReload();
     } catch {}
   };
 
-  const reset = async () => {
-    if (!confirm("Alle geïmporteerde uitgaves verwijderen?")) return;
-    setBusy(true);
-    try { await fetch("/api/import", { method: "DELETE" }); setRes(null); onDone && onDone(); } finally { setBusy(false); }
+  const approve = async () => {
+    setBusy(true); setErr(null);
+    try {
+      const r = await fetch(`/api/import/approve`, { method: "POST" }).then((x) => x.json());
+      if (!r.ok) throw new Error(r.error || "Goedkeuren mislukt");
+      setPending([]); setRes(null);
+      setMsg(`${r.approved} transactie(s) goedgekeurd en toegevoegd${r.revived ? ` · ${r.revived} hersteld` : ""}.`);
+      onDone && onDone();
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
   };
+
+  const discard = async () => {
+    if (!confirm("Wachtrij verwerpen? Deze import gaat dan niet door.")) return;
+    setBusy(true);
+    try { await fetch(`/api/import?what=pending`, { method: "DELETE" }); setPending([]); setRes(null); setMsg("Wachtrij verworpen."); }
+    finally { setBusy(false); }
+  };
+
+  const reset = async () => {
+    if (!confirm("Alle reeds goedgekeurde geïmporteerde uitgaves verwijderen?")) return;
+    setBusy(true);
+    try { await fetch("/api/import", { method: "DELETE" }); onDone && onDone(); setMsg("Goedgekeurde import gewist."); } finally { setBusy(false); }
+  };
+
+  const pendingTotal = pending.reduce((a, e) => a + (["Transfer", "Privé"].includes(e.category) ? 0 : (e.bedrag || 0)), 0);
 
   return (
     <>
       <Card title="Bankafschrift importeren" subtitle="bank · creditcard · PayPal">
         <p className="muted" style={{ marginTop: 0 }}>
-          Kies de bron, exporteer daar je transacties als <b>CSV</b> en sleep het bestand hierheen. De app houdt alleen <b>uitgaven</b> over,
-          gooit automatisch weg wat al elders meetelt (NicheBay = COGS, Google/Meta = ad spend) en alle inkomende bedragen, en categoriseert de rest.
-          Dubbele regels worden overgeslagen, dus je kunt elke maand veilig opnieuw uploaden.
+          Kies de bron en sleep je <b>CSV</b> hierheen. De import komt eerst in de <b>wachtrij</b> hieronder — die telt nog niet mee.
+          Pas daar categorie en omschrijving aan en klik op <b>Goedkeuren</b> om ze definitief toe te voegen. Doe je niks, dan blijven ze staan.
         </p>
         <div className="ctrls" style={{ marginBottom: 12 }}>
           <span className="dim" style={{ fontSize: 13 }}>Bron:</span>
@@ -548,40 +574,46 @@ function ImportPanel({ onDone, onReload, cats }: any) {
           <input type="file" accept=".csv,text/csv" style={{ display: "none" }}
             onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(f); e.target.value = ""; }} />
           <Upload size={22} />
-          <span>{busy ? "Bezig met verwerken…" : "Kies of sleep je CSV-bestand"}</span>
+          <span>{busy ? "Bezig…" : "Kies of sleep je CSV-bestand"}</span>
         </label>
         {err && <div className="banner err" style={{ marginTop: 12 }}>{err}</div>}
+        {msg && <div className="banner ok" style={{ marginTop: 12 }}>{msg}</div>}
         {res?.note && <div className="banner warn" style={{ marginTop: 12 }}>{res.note}</div>}
+        {res && (
+          <div className="kpis" style={{ marginTop: 14 }}>
+            <Kpi label="Herkend" value={String(res.parsed)} />
+            <Kpi label="In wachtrij gezet" value={String(res.staged)} tone="up" />
+            <Kpi label="Dubbel (overgeslagen)" value={String(res.duplicates)} />
+            <Kpi label="Uitgesloten" value={String(res.stats?.excluded ?? 0)} tone="down" />
+            <Kpi label="Transfers" value={String(res.stats?.transfers ?? 0)} />
+            <Kpi label="Inkomend" value={String(res.stats?.income ?? 0)} />
+          </div>
+        )}
       </Card>
 
-      {res && (
-        <Card title="Resultaat" subtitle={`${res.source || ""}${res.persisted ? " · opgeslagen" : " · niet opgeslagen"} · pas categorie/omschrijving direct aan`}>
-          <div className="kpis" style={{ marginBottom: 14 }}>
-            <Kpi label="Uitgaven herkend" value={String(res.parsed)} />
-            <Kpi label="Nieuw opgeslagen" value={String(res.saved)} tone="up" />
-            {res.revived > 0 && <Kpi label="Hersteld" value={String(res.revived)} tone="up" />}
-            <Kpi label="Dubbel (overgeslagen)" value={String(res.duplicates)} />
-            <Kpi label="Uitgesloten (al geteld)" value={String(res.stats?.excluded ?? 0)} tone="down" />
-            <Kpi label="Transfers (geen kost)" value={String(res.stats?.transfers ?? 0)} />
-            <Kpi label="Inkomend (genegeerd)" value={String(res.stats?.income ?? 0)} />
+      {pending.length > 0 && (
+        <Card title="Wachtrij — nog niet meegeteld" subtitle={`${pending.length} regels · ${eur(pendingTotal)} · pas aan en keur goed`}>
+          <div className="bulkbar" style={{ background: "var(--up-soft)", borderColor: "var(--up)", color: "var(--up)" }}>
+            <span>{pending.length} regel(s) in wachtrij</span>
+            <button className="bulkdel" style={{ background: "var(--up)" }} onClick={approve} disabled={busy}>✓ Goedkeuren &amp; toevoegen</button>
+            <button className="bulkclear" onClick={discard} disabled={busy}>Verwerp</button>
           </div>
-          {res.preview?.length > 0 && (
-            <div className="table-wrap">
-              <table className="table">
-                <thead><tr><th>Datum</th><th>Omschrijving</th><th>Categorie</th><th className="r">Bedrag</th></tr></thead>
-                <tbody>
-                  {res.preview.map((e: any, i: number) => (
-                    <ExpenseRow key={e.id || i} e={e} cats={cats || []} selectable={false}
-                      show={(k: string) => ["date", "omschrijving", "category", "bedrag"].includes(k)}
-                      onCat={editCat} onLabel={editLabel} onNote={() => {}} />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          <button className="resetbtn" onClick={reset} disabled={busy}><Trash2 size={14} /> Geïmporteerde uitgaves wissen</button>
+          <div className="table-wrap">
+            <table className="table">
+              <thead><tr><th>Datum</th><th>Omschrijving</th><th>Categorie</th><th className="r">Bedrag</th></tr></thead>
+              <tbody>
+                {pending.map((e: any, i: number) => (
+                  <ExpenseRow key={e.id || i} e={e} cats={cats || []} selectable={false}
+                    show={(k: string) => ["date", "omschrijving", "category", "bedrag"].includes(k)}
+                    onCat={editCat} onLabel={editLabel} onNote={() => {}} />
+                ))}
+              </tbody>
+            </table>
+          </div>
         </Card>
       )}
+
+      <button className="resetbtn" onClick={reset} disabled={busy} style={{ marginTop: 4 }}><Trash2 size={14} /> Goedgekeurde import wissen</button>
     </>
   );
 }

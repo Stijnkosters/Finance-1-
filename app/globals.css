@@ -145,3 +145,5 @@ tr.selrow{background:var(--accent-soft)}
 .rowdesc:focus{outline:none;border-color:var(--accent);background:var(--card);box-shadow:0 0 0 2px var(--accent-soft)}
 
 .bar-fill.alt{background:linear-gradient(90deg,#0E8A52,#3A3FD6)}
+
+.banner.ok{background:var(--up-soft);border:1px solid #BFE3CC;color:#0B6B40}
