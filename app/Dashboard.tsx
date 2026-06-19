@@ -132,10 +132,19 @@ export default function Dashboard() {
 
         {!loading && !error && pl && (
           <>
+            {pl.cogsWarning && tab === "overzicht" && (
+              <div className="banner warn">{pl.cogsWarning}</div>
+            )}
+            {pl.cogsSource === "nichebay" && tab === "overzicht" && (
+              <div className="banner info">
+                COGS automatisch uit NicheBay · {pl.nbMatched}/{pl.orderCount} orders gematcht op ordernummer.
+                {pl.nbMatched === 0 && " Geen matches — open /api/nichebay om de veldnamen te checken."}
+              </div>
+            )}
             {pl.adWarning && tab === "overzicht" && (
               <div className="banner warn">{pl.adWarning}</div>
             )}
-            {pl.missingCosts?.length > 0 && tab === "overzicht" && (
+            {pl.cogsSource !== "nichebay" && pl.missingCosts?.length > 0 && tab === "overzicht" && (
               <div className="banner warn">
                 {pl.missingCosts.length} producten hebben nog geen inkoopprijs in <b>costs.json</b> → hun COGS telt als €0. Vul ze in voor een kloppende winst.
               </div>
@@ -176,7 +185,7 @@ export default function Dashboard() {
 
                 <div className="kpis">
                   <Kpi label="Omzet" value={eur(totals.revenue || 0)} />
-                  <Kpi label="COGS (auto)" value={eur(totals.cogs || 0)} tone="down" />
+                  <Kpi label={`COGS${pl.cogsSource === "nichebay" ? " · NicheBay" : " · handmatig"}`} value={eur(totals.cogs || 0)} tone="down" />
                   <Kpi label={`Ad spend${pl.adSource === "google_ads" ? " · Google Ads" : pl.adSource === "sheet" ? " · Sheet" : ""}`} value={eur(totals.adspend || 0)} />
                   <Kpi label="P&L winst" value={eur(totals.totalProfit || 0)} tone={(totals.totalProfit || 0) >= 0 ? "up" : "down"} />
                   <Kpi label="Netto na overhead" value={eur(netTotal)} tone={netTotal >= 0 ? "up" : "down"} />

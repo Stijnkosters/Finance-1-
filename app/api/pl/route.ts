@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { fetchOrders } from "@/lib/shopify";
 import { resolveAdSpend } from "@/lib/adspend";
+import { nichebayConfigured, fetchNicheBayCostByOrder } from "@/lib/nichebay";
 import costsData from "@/data/costs.json";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +35,21 @@ export async function GET(req: Request) {
     const adRes = await resolveAdSpend(from, to);
     const adspend = adRes.map;
 
+    // COGS-bron: NicheBay (op ordernummer) met costs.json als fallback
+    let nbMap: Record<string, number> = {};
+    let cogsSource = "costs.json";
+    let cogsWarning: string | null = null;
+    if (nichebayConfigured()) {
+      try {
+        const r = await fetchNicheBayCostByOrder();
+        nbMap = r.map;
+        cogsSource = "nichebay";
+      } catch (e: any) {
+        cogsWarning = `NicheBay-koppeling faalde (${e.message}). Val terug op costs.json.`;
+      }
+    }
+    let nbMatched = 0;
+
     const byDay: Record<string, any> = {};
     let unmatched: Record<string, { title: string; units: number }> = {};
 
@@ -45,18 +61,27 @@ export async function GET(req: Request) {
       bucket.revenue += parseFloat(o.subtotalPriceSet?.shopMoney?.amount || "0");
       bucket.refunds += parseFloat(o.totalRefundedSet?.shopMoney?.amount || "0");
 
+      // Match deze Shopify-order op NicheBay-kostprijs (ordernummer zonder '#')
+      const orderNo = String(o.name || "").replace(/^#/, "").trim();
+      const nbCost = nbMap[orderNo];
+      const hasNb = nbCost != null;
+      if (hasNb) nbMatched += 1;
+
+      let lineCogs = 0;
       for (const li of o.lineItems?.nodes || []) {
         const vid = li.variant?.id;
         const qty = li.quantity || 0;
         bucket.units += qty;
         const c = vid ? costs[vid] : null;
         if (c) {
-          bucket.cogs += qty * (c.cost || 0);
-        } else if (vid) {
+          lineCogs += qty * (c.cost || 0);
+        } else if (vid && !hasNb) {
           if (!unmatched[vid]) unmatched[vid] = { title: li.title, units: 0 };
           unmatched[vid].units += qty;
         }
       }
+      // NicheBay-kost heeft voorrang; anders costs.json
+      bucket.cogs += hasNb ? nbCost : lineCogs;
     }
 
     const days = Object.values(byDay)
@@ -102,6 +127,10 @@ export async function GET(req: Request) {
       totals,
       adSource: adRes.source,
       adWarning: adRes.warning,
+      cogsSource,
+      cogsWarning,
+      nbMatched,
+      orderCount: orders.length,
       missingCosts,
       unmatched: Object.entries(unmatched).map(([id, v]) => ({ id, ...v })),
     });

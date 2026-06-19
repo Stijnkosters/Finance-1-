@@ -81,6 +81,17 @@ Laat de env vars leeg en vul `data/adspend.json` handmatig (datum → bedrag). D
 - `app/api/pl/route.ts` — de engine: orders → COGS → dag-P&L.
 - `lib/shopify.ts` — Shopify GraphQL-client.
 
+## NicheBay koppelen (kostprijs / COGS automatisch)
+
+In plaats van `costs.json` handmatig in te vullen, haalt de app de kostprijs per order rechtstreeks uit NicheBay en matcht die op je Shopify-ordernummer.
+
+1. NicheBay → Settings → **API Settings** → maak een API key (`sk_...`).
+2. Zet als env var: `NICHEBAY_API_KEY` = je `sk_...` key.
+3. **Verifieer**: open `https://<jouw-app-url>/api/nichebay`. Je ziet een `sampleOrder` (ruwe NicheBay-data) en `matchedOrders`. Werkt het, dan toont het dashboard "COGS · NicheBay".
+4. 0 matches? Stuur me de `sampleOrder`-JSON — dan zet ik de exacte veldnamen goed (de NicheBay-doc toont de response-schema's niet, dus de app raadt nu de gangbare namen).
+
+> Base URL: `https://dashboard-admin.nichebay.com/api/open/v1` · Auth: `Authorization: Bearer sk_...`. Orders zonder NicheBay-kost (SD-kaart, cadeaukaart) vallen terug op `costs.json`.
+
 ## Later automatiseren (geen handwerk meer)
 - **Ad spend** → Make/n8n-flow die dagelijks Google Ads + Meta-spend naar `adspend.json` (of een DB) schrijft.
 - **Inkoopprijzen** → als je leverancier een API/prijsfeed heeft, laat die `costs.json` updaten.
