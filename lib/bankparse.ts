@@ -73,6 +73,52 @@ function splitCsvLine(line: string, delim: string): string[] {
   return out;
 }
 
+// Wise-specifieke lezer: Direction (OUT=uitgave), bedrag = source amount na fees + fee.
+function parseWise(lines: string[], delim: string, header: string[], exclude: string[]) {
+  const idx = (re: RegExp) => header.findIndex((h) => re.test(h));
+  const iDate = idx(/created on/) >= 0 ? idx(/created on/) : idx(/finished on|date/);
+  const iDir = idx(/direction/);
+  const iAmt = idx(/source amount/);
+  const iFee = idx(/source fee amount/);
+  const iCur = idx(/source currency/);
+  const iTgt = idx(/target name/);
+  const iRef = idx(/reference/);
+  const iNote = idx(/^note$/);
+
+  const expenses: any[] = [];
+  let excluded = 0, income = 0, transfers = 0;
+
+  for (let r = 1; r < lines.length; r++) {
+    const cols = splitCsvLine(lines[r], delim).map((c) => c.replace(/^"|"$/g, ""));
+    const dir = (iDir >= 0 ? cols[iDir] : "").toUpperCase();
+    if (dir !== "OUT") { income++; continue; } // alleen geld eruit
+
+    const date = normDate(iDate >= 0 ? cols[iDate] : "");
+    if (!date) continue;
+
+    const cur = (iCur >= 0 ? cols[iCur] : "EUR").toUpperCase();
+    const amount = parseAmount(iAmt >= 0 ? cols[iAmt] : "0") + (iFee >= 0 ? parseAmount(cols[iFee]) : 0);
+    if (!amount) continue;
+
+    const tgt = iTgt >= 0 ? cols[iTgt] : "";
+    const ref = iRef >= 0 ? cols[iRef] : "";
+    const note = iNote >= 0 ? cols[iNote] : "";
+    let desc = [tgt, ref || note].filter(Boolean).join(" — ").trim() || "(Wise overboeking)";
+    if (cur && cur !== "EUR") desc = `${desc} [${cur}]`;
+
+    const hay = desc.toLowerCase();
+    if (exclude.some((k) => hay.includes(k))) { excluded++; continue; }
+
+    let category = "Overig";
+    for (const [re, cat] of CATEGORY_RULES) { if (re.test(desc)) { category = cat; break; } }
+    if (TRANSFER_RE.test(desc)) { category = "Transfer"; transfers++; }
+
+    expenses.push({ date, omschrijving: desc.slice(0, 120), methode: "WISE", bedrag: Math.abs(amount), category });
+  }
+
+  return { expenses, stats: { total: lines.length - 1, added: expenses.length, excluded, income, transfers }, header, source: "Wise" };
+}
+
 export function parseBankCsv(text: string, sourceKey = "rabobank") {
   const src = SOURCES[sourceKey] || SOURCES.anders;
   const exclude = [...EXCLUDE_DEFAULT, ...envExclude, ...(src.type === "paypal" ? PAYPAL_EXTRA_EXCLUDE : [])];
@@ -83,7 +129,12 @@ export function parseBankCsv(text: string, sourceKey = "rabobank") {
   const delim = lines[0].split(";").length > lines[0].split(",").length ? ";" : ",";
   const header = splitCsvLine(lines[0], delim).map((h) => h.trim().toLowerCase().replace(/"/g, ""));
 
-  const di = header.findIndex((h) => /datum|date|boekdatum|transactiedatum|rentedatum|completed|started/.test(h));
+  // Wise heeft een eigen format (Direction OUT/IN + Source amount). Aparte lezer.
+  if (header.includes("direction") && header.some((h) => /source amount/.test(h))) {
+    return parseWise(lines, delim, header, exclude);
+  }
+
+  const di = header.findIndex((h) => /datum|date|boekdatum|transactiedatum|rentedatum|completed|started|created/.test(h));
   // amount-kolom: PayPal prefereert net/gross
   let ai = -1;
   if (src.type === "paypal") {
