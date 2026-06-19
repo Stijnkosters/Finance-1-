@@ -58,7 +58,7 @@ export async function GET(req: Request) {
       if (!byDay[day]) byDay[day] = { date: day, orders: 0, units: 0, revenue: 0, refunds: 0, cogs: 0 };
       const bucket = byDay[day];
       bucket.orders += 1;
-      bucket.revenue += parseFloat(o.subtotalPriceSet?.shopMoney?.amount || "0");
+      bucket.revenue += parseFloat(o.totalPriceSet?.shopMoney?.amount || o.subtotalPriceSet?.shopMoney?.amount || "0");
       bucket.refunds += parseFloat(o.totalRefundedSet?.shopMoney?.amount || "0");
 
       // Match deze Shopify-order op NicheBay-kostprijs (ordernummer of order-ID)

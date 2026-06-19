@@ -33,6 +33,7 @@ query Orders($cursor: String, $q: String) {
       name
       createdAt
       subtotalPriceSet { shopMoney { amount } }
+      totalPriceSet { shopMoney { amount } }
       totalRefundedSet { shopMoney { amount } }
       lineItems(first: 50) {
         nodes {
