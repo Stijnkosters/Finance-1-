@@ -36,6 +36,9 @@ const CATEGORY_RULES: [RegExp, string][] = [
   [/adobe|canva|figma|notion|slack|zoom|microsoft|office/i, "Software"],
 ];
 
+// Eigen-rekening overboekingen / top-ups / kaart-aflossingen -> tag als "Transfer" (telt niet als kost).
+export const TRANSFER_RE = /revolut|wise|airwallex|\bbunq\b|\bn26\b|american express|amex|creditcard|credit ?card|kaartnummer|rekeningoverzicht|eigen rekening|naar rekening|tussenrekening|spaarrekening|tikkie/i;
+
 function parseAmount(s: string): number {
   s = (s || "").trim().replace(/[€$\s]/g, "");
   const neg = /-/.test(s) || /^\(.*\)$/.test(s);
@@ -93,7 +96,7 @@ export function parseBankCsv(text: string, sourceKey = "rabobank") {
   const descIdxs = header.map((h, i) => (/omschrijving|mededeling|description|memo|narrative|reference/.test(h) ? i : -1)).filter((i) => i >= 0);
 
   const expenses: any[] = [];
-  let excluded = 0, income = 0;
+  let excluded = 0, income = 0, transfers = 0;
 
   for (let r = 1; r < lines.length; r++) {
     const cols = splitCsvLine(lines[r], delim).map((c) => c.replace(/^"|"$/g, ""));
@@ -114,11 +117,12 @@ export function parseBankCsv(text: string, sourceKey = "rabobank") {
 
     let category = "Overig";
     for (const [re, cat] of CATEGORY_RULES) { if (re.test(desc)) { category = cat; break; } }
+    if (TRANSFER_RE.test(desc)) { category = "Transfer"; transfers++; }
 
     expenses.push({ date, omschrijving: desc.slice(0, 120), methode: src.label, bedrag: Math.abs(amount), category });
   }
 
-  return { expenses, stats: { total: lines.length - 1, added: expenses.length, excluded, income }, header, source: src.name };
+  return { expenses, stats: { total: lines.length - 1, added: expenses.length, excluded, income, transfers }, header, source: src.name };
 }
 
 export function dedupKey(e: any): string {

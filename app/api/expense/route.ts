@@ -9,22 +9,25 @@ export async function POST(req: Request) {
     if (!persistenceEnabled()) {
       return NextResponse.json({ ok: false, error: "Geen opslag actief (DATA_DIR ontbreekt)." }, { status: 400 });
     }
-    const { id, mkey, category, note, remember = true } = await req.json();
+    const { id, mkey, category, note, label, remember = true } = await req.json();
     if (!id) return NextResponse.json({ ok: false, error: "id ontbreekt" }, { status: 400 });
 
     const meta = await readJson("expense-meta.json", {});
     const cur = meta[id] || {};
     if (category !== undefined) cur.category = category;
     if (note !== undefined) cur.note = note;
+    if (label !== undefined) cur.label = label;
     meta[id] = cur;
     await writeJson("expense-meta.json", meta);
 
     let learned = false;
-    if (remember && category && mkey) {
+    if (remember && mkey && (category || label)) {
       const rules: any[] = await readJson("expense-rules.json", []);
       const i = rules.findIndex((r) => r.key === mkey);
-      if (i >= 0) rules[i].category = category;
-      else rules.push({ key: mkey, category });
+      const r = i >= 0 ? rules[i] : { key: mkey };
+      if (category) r.category = category;
+      if (label) r.label = label;
+      if (i >= 0) rules[i] = r; else rules.push(r);
       await writeJson("expense-rules.json", rules);
       learned = true;
     }

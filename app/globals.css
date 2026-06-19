@@ -136,3 +136,10 @@ tr.selrow{background:var(--accent-soft)}
 .bulkdel:hover{filter:brightness(.93)}
 .bulkclear{font:inherit;font-size:13px;font-weight:600;padding:6px 11px;border:1px solid var(--line);
   border-radius:8px;background:var(--card);color:var(--soft);cursor:pointer}
+
+/* inline omschrijving bewerken */
+.rowdesc{font:inherit;font-size:13px;padding:5px 9px;border:1px solid transparent;border-radius:7px;
+  background:transparent;color:var(--ink);width:100%;min-width:240px}
+.rowdesc::placeholder{color:var(--soft);opacity:.6}
+.rowdesc:hover{border-color:var(--line)}
+.rowdesc:focus{outline:none;border-color:var(--accent);background:var(--card);box-shadow:0 0 0 2px var(--accent-soft)}

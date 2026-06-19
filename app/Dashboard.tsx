@@ -114,6 +114,13 @@ export default function Dashboard() {
       await fetch(`/api/expense`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: e.id, note, remember: false }) });
     } catch {}
   };
+  const saveLabel = async (e: any, label: string) => {
+    setData((d: any) => ({ ...d, expenses: (d.expenses || []).map((x: any) => (x.id === e.id ? { ...x, label } : x)) }));
+    try {
+      await fetch(`/api/expense`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: e.id, mkey: e.mkey, label, remember: true }) });
+      await reloadData();
+    } catch {}
+  };
 
   const pickQuick = (v: string) => { setFromInput(""); setToInput(""); setMonthSel(""); setPeriod(v); };
   const pickMonth = (val: string) => {
@@ -126,10 +133,11 @@ export default function Dashboard() {
   const days = pl?.days || [];
   const totals = pl?.totals || {};
 
+  const NON_COST = ["Transfer", "Privé"];
   const expensesInRange = useMemo(() => {
     if (!pl) return [];
     const { from, to } = pl.range;
-    return (data.expenses || []).filter((e: any) => e.date >= from && e.date <= to);
+    return (data.expenses || []).filter((e: any) => e.date >= from && e.date <= to && !NON_COST.includes(e.category));
   }, [data, pl]);
   const overhead = expensesInRange.reduce((a: number, e: any) => a + (e.bedrag || 0), 0);
 
@@ -413,7 +421,7 @@ export default function Dashboard() {
                         {rows.length === 0 && <tr><td colSpan={visCount + 1} className="dim center">Geen uitgaves in deze periode.</td></tr>}
                         {rows.map((e: any, i: number) => (
                           <ExpenseRow key={e.id || i} e={e} cats={data.categories || []} show={showCol}
-                            sel={selected.has(e.id)} onSel={() => toggleSel(e.id)} onCat={saveCat} onNote={saveNote} />
+                            sel={selected.has(e.id)} onSel={() => toggleSel(e.id)} onCat={saveCat} onNote={saveNote} onLabel={saveLabel} />
                         ))}
                       </tbody>
                     </table>
@@ -518,6 +526,7 @@ function ImportPanel({ onDone }: any) {
             <Kpi label="Nieuw opgeslagen" value={String(res.saved)} tone="up" />
             <Kpi label="Dubbel (overgeslagen)" value={String(res.duplicates)} />
             <Kpi label="Uitgesloten (al geteld)" value={String(res.stats?.excluded ?? 0)} tone="down" />
+            <Kpi label="Transfers (geen kost)" value={String(res.stats?.transfers ?? 0)} />
             <Kpi label="Inkomend (genegeerd)" value={String(res.stats?.income ?? 0)} />
           </div>
           {res.preview?.length > 0 && (
@@ -544,15 +553,24 @@ function ImportPanel({ onDone }: any) {
   );
 }
 
-function ExpenseRow({ e, cats, show, sel, onSel, onCat, onNote }: any) {
+function ExpenseRow({ e, cats, show, sel, onSel, onCat, onNote, onLabel }: any) {
   const [note, setNote] = useState(e.note || "");
+  const [label, setLabel] = useState(e.label || "");
   useEffect(() => { setNote(e.note || ""); }, [e.note, e.id]);
+  useEffect(() => { setLabel(e.label || ""); }, [e.label, e.id]);
   const options: string[] = cats.includes(e.category) ? cats : [e.category, ...cats];
   return (
     <tr className={`${e.edited ? "edited" : ""} ${sel ? "selrow" : ""}`}>
       <td className="selcol"><input type="checkbox" checked={!!sel} onChange={onSel} /></td>
       {show("date") && <td className="nowrap">{e.date ? ddmmyyyy(e.date) : "—"}</td>}
-      {show("omschrijving") && <td>{e.omschrijving}</td>}
+      {show("omschrijving") && (
+        <td>
+          <input className="rowdesc" value={label} title={e.raw || ""} placeholder={e.raw || "omschrijving"}
+            onChange={(ev) => setLabel(ev.target.value)}
+            onBlur={() => { if (label !== (e.label || "")) onLabel(e, label); }}
+            onKeyDown={(ev) => { if (ev.key === "Enter") (ev.target as HTMLInputElement).blur(); }} />
+        </td>
+      )}
       {show("category") && (
         <td>
           <select className="rowsel" value={e.category} onChange={(ev) => onCat(e, ev.target.value)}>
