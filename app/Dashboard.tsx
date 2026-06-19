@@ -40,6 +40,10 @@ function lastMonths(n: number) {
   return out;
 }
 const MONTHS = lastMonths(12);
+const EXP_COLS: [string, string][] = [
+  ["date", "Datum"], ["omschrijving", "Omschrijving"], ["category", "Categorie"],
+  ["note", "Notitie"], ["methode", "Methode"], ["bedrag", "Bedrag"],
+];
 
 export default function Dashboard() {
   const [tab, setTab] = useState("overzicht");
@@ -47,6 +51,15 @@ export default function Dashboard() {
   const [fromInput, setFromInput] = useState("");
   const [toInput, setToInput] = useState("");
   const [monthSel, setMonthSel] = useState("");
+  const [expMonth, setExpMonth] = useState("");
+  const [hiddenCols, setHiddenCols] = useState<string[]>([]);
+  useEffect(() => { try { const s = localStorage.getItem("dmx_hiddencols"); if (s) setHiddenCols(JSON.parse(s)); } catch {} }, []);
+  const toggleCol = (k: string) => setHiddenCols((h) => {
+    const n = h.includes(k) ? h.filter((x) => x !== k) : [...h, k];
+    try { localStorage.setItem("dmx_hiddencols", JSON.stringify(n)); } catch {}
+    return n;
+  });
+  const showCol = (k: string) => !hiddenCols.includes(k);
   const [pl, setPl] = useState<any>(null);
   const [data, setData] = useState<any>({ expenses: [], liquid: [], openInvoices: [] });
   const [loading, setLoading] = useState(true);
@@ -169,7 +182,7 @@ export default function Dashboard() {
       <main className="main">
         <div className="row-between">
           <h2 className="h2">{tab === "overzicht" ? "Overzicht" : tab === "pl" ? "Dagelijkse P&L" : tab === "uitgaves" ? "Uitgaves" : tab === "balans" ? "Balans" : "Importeren"}</h2>
-          {tab !== "import" && (
+          {tab !== "import" && tab !== "uitgaves" && (
             <div className="ctrls">
               <div className="seg">
                 {[["vandaag", "Vandaag"], ["week", "Week"], ["maand", "30d"], ["kwartaal", "90d"]].map(([v, l]) => (
@@ -185,8 +198,16 @@ export default function Dashboard() {
               <input className="dinp" type="date" value={toInput} onChange={(e) => { setMonthSel(""); setToInput(e.target.value); }} />
             </div>
           )}
+          {tab === "uitgaves" && (
+            <div className="ctrls">
+              <select className="msel" value={expMonth} onChange={(e) => setExpMonth(e.target.value)}>
+                <option value="">Alle maanden</option>
+                {MONTHS.map((m) => <option key={m.val} value={m.val}>{m.label}</option>)}
+              </select>
+            </div>
+          )}
         </div>
-        {pl && tab !== "import" && (
+        {pl && (tab === "overzicht" || tab === "pl") && (
           <div className="rangelbl dim">Periode: {ddmmyyyy(pl.range.from)} – {ddmmyyyy(pl.range.to)}</div>
         )}
 
@@ -345,21 +366,35 @@ export default function Dashboard() {
               </Card>
             )}
 
-            {tab === "uitgaves" && (
-              <Card title="Uitgaves" subtitle={`${(data.expenses || []).length} regels${data.importedCount ? ` · ${data.importedCount} geïmporteerd` : ""} · categorie wijzigen = onthouden`}>
-                <div className="table-wrap">
-                  <table className="table">
-                    <thead><tr><th>Datum</th><th>Omschrijving</th><th>Categorie</th><th>Notitie</th><th>Methode</th><th className="r">Bedrag</th></tr></thead>
-                    <tbody>
-                      {(data.expenses || []).length === 0 && <tr><td colSpan={6} className="dim center">Geen uitgaves.</td></tr>}
-                      {[...(data.expenses || [])].sort((a: any, b: any) => (b.date || "").localeCompare(a.date || "")).map((e: any, i: number) => (
-                        <ExpenseRow key={e.id || i} e={e} cats={data.categories || []} onCat={saveCat} onNote={saveNote} />
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </Card>
-            )}
+            {tab === "uitgaves" && (() => {
+              const rows = [...(data.expenses || [])]
+                .filter((e: any) => !expMonth || (e.date || "").startsWith(expMonth))
+                .sort((a: any, b: any) => (b.date || "").localeCompare(a.date || ""));
+              const visCount = EXP_COLS.filter(([k]) => showCol(k)).length;
+              return (
+                <Card title="Uitgaves" subtitle={`${rows.length} regels${data.importedCount ? ` · ${data.importedCount} geïmporteerd` : ""} · categorie wijzigen = onthouden`}>
+                  <div className="colbar">
+                    <span className="dim">Kolommen:</span>
+                    {EXP_COLS.map(([k, l]) => (
+                      <button key={k} className={`colchip ${showCol(k) ? "on" : ""}`} onClick={() => toggleCol(k)}>{l}</button>
+                    ))}
+                  </div>
+                  <div className="table-wrap">
+                    <table className="table">
+                      <thead><tr>
+                        {EXP_COLS.map(([k, l]) => showCol(k) ? <th key={k} className={k === "bedrag" ? "r" : ""}>{l}</th> : null)}
+                      </tr></thead>
+                      <tbody>
+                        {rows.length === 0 && <tr><td colSpan={visCount} className="dim center">Geen uitgaves in deze periode.</td></tr>}
+                        {rows.map((e: any, i: number) => (
+                          <ExpenseRow key={e.id || i} e={e} cats={data.categories || []} show={showCol} onCat={saveCat} onNote={saveNote} />
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </Card>
+              );
+            })()}
 
             {tab === "balans" && (
               <div className="grid2">
@@ -483,27 +518,31 @@ function ImportPanel({ onDone }: any) {
   );
 }
 
-function ExpenseRow({ e, cats, onCat, onNote }: any) {
+function ExpenseRow({ e, cats, show, onCat, onNote }: any) {
   const [note, setNote] = useState(e.note || "");
   useEffect(() => { setNote(e.note || ""); }, [e.note, e.id]);
   const options: string[] = cats.includes(e.category) ? cats : [e.category, ...cats];
   return (
     <tr className={e.edited ? "edited" : ""}>
-      <td className="nowrap">{e.date ? ddmmyyyy(e.date) : "—"}</td>
-      <td>{e.omschrijving}</td>
-      <td>
-        <select className="rowsel" value={e.category} onChange={(ev) => onCat(e, ev.target.value)}>
-          {options.map((c) => <option key={c} value={c}>{c}</option>)}
-        </select>
-      </td>
-      <td>
-        <input className="rownote" value={note} placeholder="notitie…"
-          onChange={(ev) => setNote(ev.target.value)}
-          onBlur={() => { if (note !== (e.note || "")) onNote(e, note); }}
-          onKeyDown={(ev) => { if (ev.key === "Enter") (ev.target as HTMLInputElement).blur(); }} />
-      </td>
-      <td className="dim">{e.methode}</td>
-      <td className="r mono strong">{eur(e.bedrag)}</td>
+      {show("date") && <td className="nowrap">{e.date ? ddmmyyyy(e.date) : "—"}</td>}
+      {show("omschrijving") && <td>{e.omschrijving}</td>}
+      {show("category") && (
+        <td>
+          <select className="rowsel" value={e.category} onChange={(ev) => onCat(e, ev.target.value)}>
+            {options.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </td>
+      )}
+      {show("note") && (
+        <td>
+          <input className="rownote" value={note} placeholder="notitie…"
+            onChange={(ev) => setNote(ev.target.value)}
+            onBlur={() => { if (note !== (e.note || "")) onNote(e, note); }}
+            onKeyDown={(ev) => { if (ev.key === "Enter") (ev.target as HTMLInputElement).blur(); }} />
+        </td>
+      )}
+      {show("methode") && <td className="dim">{e.methode}</td>}
+      {show("bedrag") && <td className="r mono strong">{eur(e.bedrag)}</td>}
     </tr>
   );
 }

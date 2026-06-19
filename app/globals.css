@@ -117,3 +117,10 @@ body{font-family:'Inter',system-ui,sans-serif;color:var(--ink);background:var(--
 .rownote:hover{border-color:var(--line)}
 .rownote:focus{outline:none;border-color:var(--accent);background:var(--card);box-shadow:0 0 0 2px var(--accent-soft)}
 tr.edited td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
+
+/* kolom-toggles */
+.colbar{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:14px;font-size:12.5px}
+.colchip{font:inherit;font-size:12px;font-weight:600;padding:4px 11px;border:1px solid var(--line);
+  border-radius:999px;background:var(--card);color:var(--soft);cursor:pointer;transition:all .12s}
+.colchip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.colchip:not(.on){opacity:.55;text-decoration:line-through}
