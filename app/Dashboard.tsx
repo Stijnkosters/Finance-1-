@@ -70,6 +70,23 @@ export default function Dashboard() {
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [period, fromInput, toInput]);
 
+  const reloadData = async () => {
+    try { const r = await fetch(`/api/data`).then((x) => x.json()); setData(r); } catch {}
+  };
+  const saveCat = async (e: any, category: string) => {
+    setData((d: any) => ({ ...d, expenses: (d.expenses || []).map((x: any) => (x.id === e.id ? { ...x, category } : x)) }));
+    try {
+      await fetch(`/api/expense`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: e.id, mkey: e.mkey, category, remember: true }) });
+      await reloadData();
+    } catch {}
+  };
+  const saveNote = async (e: any, note: string) => {
+    setData((d: any) => ({ ...d, expenses: (d.expenses || []).map((x: any) => (x.id === e.id ? { ...x, note } : x)) }));
+    try {
+      await fetch(`/api/expense`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: e.id, note, remember: false }) });
+    } catch {}
+  };
+
   const pickQuick = (v: string) => { setFromInput(""); setToInput(""); setMonthSel(""); setPeriod(v); };
   const pickMonth = (val: string) => {
     setMonthSel(val);
@@ -329,20 +346,14 @@ export default function Dashboard() {
             )}
 
             {tab === "uitgaves" && (
-              <Card title="Uitgaves" subtitle={`${(data.expenses || []).length} regels${data.importedCount ? ` · ${data.importedCount} geïmporteerd` : ""}`}>
+              <Card title="Uitgaves" subtitle={`${(data.expenses || []).length} regels${data.importedCount ? ` · ${data.importedCount} geïmporteerd` : ""} · categorie wijzigen = onthouden`}>
                 <div className="table-wrap">
                   <table className="table">
-                    <thead><tr><th>Datum</th><th>Omschrijving</th><th>Categorie</th><th>Methode</th><th className="r">Bedrag</th></tr></thead>
+                    <thead><tr><th>Datum</th><th>Omschrijving</th><th>Categorie</th><th>Notitie</th><th>Methode</th><th className="r">Bedrag</th></tr></thead>
                     <tbody>
-                      {(data.expenses || []).length === 0 && <tr><td colSpan={5} className="dim center">Geen uitgaves.</td></tr>}
+                      {(data.expenses || []).length === 0 && <tr><td colSpan={6} className="dim center">Geen uitgaves.</td></tr>}
                       {[...(data.expenses || [])].sort((a: any, b: any) => (b.date || "").localeCompare(a.date || "")).map((e: any, i: number) => (
-                        <tr key={i}>
-                          <td className="nowrap">{e.date ? ddmmyyyy(e.date) : "—"}</td>
-                          <td>{e.omschrijving}</td>
-                          <td className="dim">{e.category || "—"}</td>
-                          <td className="dim">{e.methode}</td>
-                          <td className="r mono strong">{eur(e.bedrag)}</td>
-                        </tr>
+                        <ExpenseRow key={e.id || i} e={e} cats={data.categories || []} onCat={saveCat} onNote={saveNote} />
                       ))}
                     </tbody>
                   </table>
@@ -469,6 +480,31 @@ function ImportPanel({ onDone }: any) {
         </Card>
       )}
     </>
+  );
+}
+
+function ExpenseRow({ e, cats, onCat, onNote }: any) {
+  const [note, setNote] = useState(e.note || "");
+  useEffect(() => { setNote(e.note || ""); }, [e.note, e.id]);
+  const options: string[] = cats.includes(e.category) ? cats : [e.category, ...cats];
+  return (
+    <tr className={e.edited ? "edited" : ""}>
+      <td className="nowrap">{e.date ? ddmmyyyy(e.date) : "—"}</td>
+      <td>{e.omschrijving}</td>
+      <td>
+        <select className="rowsel" value={e.category} onChange={(ev) => onCat(e, ev.target.value)}>
+          {options.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+      </td>
+      <td>
+        <input className="rownote" value={note} placeholder="notitie…"
+          onChange={(ev) => setNote(ev.target.value)}
+          onBlur={() => { if (note !== (e.note || "")) onNote(e, note); }}
+          onKeyDown={(ev) => { if (ev.key === "Enter") (ev.target as HTMLInputElement).blur(); }} />
+      </td>
+      <td className="dim">{e.methode}</td>
+      <td className="r mono strong">{eur(e.bedrag)}</td>
+    </tr>
   );
 }
 
