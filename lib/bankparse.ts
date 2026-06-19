@@ -39,6 +39,8 @@ const CATEGORY_RULES: [RegExp, string][] = [
 
 // Eigen-rekening overboekingen / top-ups / kaart-aflossingen -> tag als "Transfer" (telt niet als kost).
 export const TRANSFER_RE = /revolut|wise|airwallex|\bbunq\b|\bn26\b|american express|amex|creditcard|credit ?card|kaartnummer|rekeningoverzicht|eigen rekening|naar rekening|tussenrekening|spaarrekening|tikkie/i;
+// creditcard-aflossing / bijschrijving van je eigen betaling (geen refund)
+const PAYMENT_RE = /payment|betaling|thank you|received|ontvangen|incasso|autom|direct debit|sepa|aflossing|verrekening/i;
 
 function parseAmount(s: string): number {
   s = (s || "").trim().replace(/[€$\s]/g, "");
@@ -194,14 +196,39 @@ export function parseBankCsv(text: string, sourceKey = "rabobank") {
       if (amount > 0) flow[mk].in += amount; else flow[mk].out += -amount;
     }
 
-    const isExpense = src.type === "creditcard" ? amount > 0 : amount < 0;
-    if (!isExpense || amount === 0) { income++; continue; }
-
     const namePart = nameIdx >= 0 ? cols[nameIdx] : "";
     const descPart = descIdxs.map((i) => cols[i]).filter(Boolean).join(" ");
     const desc = ([namePart, descPart].filter(Boolean).join(" — ").trim()) || "(geen omschrijving)";
-
     const hay = desc.toLowerCase();
+
+    // CREDITCARD: + = aankoop (uitgave), - = refund of aflossing
+    if (src.type === "creditcard") {
+      if (amount === 0) continue;
+      if (amount < 0) {
+        // aflossing/betaling van de kaart vanaf je bank = transfer, geen refund
+        if (PAYMENT_RE.test(desc)) { transfers++; continue; }
+        // echte refund -> negatieve uitgave (haalt kosten eraf), en telt als geld erin
+        if (exclude.some((k) => hay.includes(k))) { excluded++; continue; }
+        let rcat = "Overig";
+        for (const [re, c] of CATEGORY_RULES) { if (re.test(desc)) { rcat = c; break; } }
+        const mk = date.slice(0, 7);
+        if (!flow[mk]) flow[mk] = { in: 0, out: 0 };
+        flow[mk].in += Math.abs(amount);
+        income++;
+        expenses.push({ date, omschrijving: ("Refund — " + desc).slice(0, 120), methode: src.label, bedrag: -Math.abs(amount), category: rcat });
+        continue;
+      }
+      // amount > 0 -> aankoop op de kaart
+      if (exclude.some((k) => hay.includes(k))) { excluded++; continue; }
+      let ccat = "Overig";
+      for (const [re, c] of CATEGORY_RULES) { if (re.test(desc)) { ccat = c; break; } }
+      if (TRANSFER_RE.test(desc)) { ccat = "Transfer"; transfers++; }
+      expenses.push({ date, omschrijving: desc.slice(0, 120), methode: src.label, bedrag: amount, category: ccat });
+      continue;
+    }
+
+    // BANK / PAYPAL: alleen geld eruit (negatief) is een uitgave
+    if (amount >= 0) { income++; continue; }
     if (exclude.some((k) => hay.includes(k))) { excluded++; continue; }
 
     let category = "Overig";
