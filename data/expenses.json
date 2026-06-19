@@ -1,0 +1,7 @@
+{
+  "_help": "Vaste/overige uitgaves (overhead), los van COGS en ad spend. Voeg regels toe. methode: AMEX/RABO/WISE/Mollie/PayPal/Klarna/Overig.",
+  "expenses": [
+    { "date": "2026-06-01", "omschrijving": "Shopify abonnement", "methode": "AMEX", "bedrag": 79.75 },
+    { "date": "2026-06-01", "omschrijving": "Klaviyo", "methode": "AMEX", "bedrag": 131.68 }
+  ]
+}

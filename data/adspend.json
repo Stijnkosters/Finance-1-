@@ -1,0 +1,6 @@
+{
+  "_help": "Advertentiekosten per dag (EUR). Key = datum YYYY-MM-DD. Voor nu handmatig of via een Make/n8n-flow vanuit Google Ads/Meta. De app trekt dit van je dagwinst af.",
+  "adspend": {
+    "2026-06-18": 0
+  }
+}

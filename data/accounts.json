@@ -1,0 +1,14 @@
+{
+  "_help": "Cashpositie. Vul saldi en openstaande facturen in. De app toont liquide - openstaand = netto positie.",
+  "liquid": [
+    { "name": "Banking Balance", "amount": 0 },
+    { "name": "Shopify Balance", "amount": 0 },
+    { "name": "Mollie Balance", "amount": 0 },
+    { "name": "PayPal Balance", "amount": 0 }
+  ],
+  "openInvoices": [
+    { "name": "Supplier", "amount": 0 },
+    { "name": "Ad Agency", "amount": 0 },
+    { "name": "American Express", "amount": 0 }
+  ]
+}

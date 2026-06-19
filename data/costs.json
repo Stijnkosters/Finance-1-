@@ -1,0 +1,25 @@
+{
+  "_help": "Vul per variant je INKOOPPRIJS in (cost) in EUR, inclusief inbound shipping per stuk indien je dat wil meerekenen. Key = Shopify variant GID. De app matcht orderregels hierop en berekent dagelijkse COGS automatisch. Producten zonder inkoop (cadeaukaart, e-book, garantie) laat je op 0.",
+  "costs": {
+    "gid://shopify/ProductVariant/50461651009875": { "title": "VoiceGuard Pro 1080P Dashcam", "price": 59.95, "cost": 0 },
+    "gid://shopify/ProductVariant/50462254661971": { "title": "GuardianView Pro Dashcam 4K", "price": 99.95, "cost": 0 },
+    "gid://shopify/ProductVariant/50499878945107": { "title": "360Guard Pro Dashcam", "price": 89.95, "cost": 0 },
+    "gid://shopify/ProductVariant/50499879600467": { "title": "ClearView Ultra 1080p Dashcam", "price": 69.95, "cost": 0 },
+    "gid://shopify/ProductVariant/50973125673299": { "title": "DriveVision Pro Dashcam", "price": 74.95, "cost": 0 },
+    "gid://shopify/ProductVariant/50799479292243": { "title": "AutoSync Pro CarPlay", "price": 149.95, "cost": 0 },
+    "gid://shopify/ProductVariant/50805709603155": { "title": "DriveMate One CarPlay", "price": 99.95, "cost": 0 },
+    "gid://shopify/ProductVariant/50806418440531": { "title": "Navion One CarPlay", "price": 89.95, "cost": 0 },
+    "gid://shopify/ProductVariant/50806537191763": { "title": "PlugWave 2.0 CarPlay", "price": 34.95, "cost": 0 },
+    "gid://shopify/ProductVariant/50808872272211": { "title": "CarVizio 2.0 CarPlay", "price": 39.95, "cost": 0 },
+    "gid://shopify/ProductVariant/51200326238547": { "title": "DriveLink CarPlay", "price": 39.95, "cost": 0 },
+    "gid://shopify/ProductVariant/50609586766163": { "title": "32GB MicroSD (DE)", "price": 15.0, "cost": 0 },
+    "gid://shopify/ProductVariant/51115249828179": { "title": "32GB MicroSD", "price": 15.0, "cost": 0 },
+    "gid://shopify/ProductVariant/51773751918931": { "title": "128GB MicroSD", "price": 25.0, "cost": 0 },
+    "gid://shopify/ProductVariant/50462007230803": { "title": "Cadeaukaart \u20ac10", "price": 10.0, "cost": 0 },
+    "gid://shopify/ProductVariant/50462011392339": { "title": "Cadeaukaart \u20ac25", "price": 25.0, "cost": 0 },
+    "gid://shopify/ProductVariant/50462011982163": { "title": "Cadeaukaart \u20ac50", "price": 50.0, "cost": 0 },
+    "gid://shopify/ProductVariant/50462012539219": { "title": "Cadeaukaart \u20ac100", "price": 100.0, "cost": 0 },
+    "gid://shopify/ProductVariant/50666876567891": { "title": "E-book", "price": 20.0, "cost": 0 },
+    "gid://shopify/ProductVariant/51212384108883": { "title": "2 jaar extra garantie", "price": 2.95, "cost": 0 }
+  }
+}
