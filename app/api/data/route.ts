@@ -11,7 +11,7 @@ export async function GET() {
   const imported = await readJson("imported-expenses.json", []);
   const meta = await readJson("expense-meta.json", {});
   const rules = await readJson("expense-rules.json", []);
-  const expenses = decorate([...committed, ...imported], meta, rules);
+  const expenses = decorate([...committed, ...imported], meta, rules).filter((e) => !e.deleted);
   return NextResponse.json({
     expenses,
     importedCount: Array.isArray(imported) ? imported.length : 0,

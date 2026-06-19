@@ -43,6 +43,7 @@ export function decorate(expenses: any[], meta: Record<string, any>, rules: any[
       category: ov.category || ruleCat || e.category || "Overig",
       note: ov.note || "",
       edited: !!(ov.category || ov.note),
+      deleted: !!ov.deleted,
     };
   });
 }

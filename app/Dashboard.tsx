@@ -40,10 +40,11 @@ function lastMonths(n: number) {
   return out;
 }
 const MONTHS = lastMonths(12);
-const EXP_COLS: [string, string][] = [
-  ["date", "Datum"], ["omschrijving", "Omschrijving"], ["category", "Categorie"],
-  ["note", "Notitie"], ["methode", "Methode"], ["bedrag", "Bedrag"],
+const EXP_COLS: [string, string, boolean][] = [
+  ["date", "Datum", true], ["omschrijving", "Omschrijving", true], ["category", "Categorie", true],
+  ["note", "Notitie", false], ["methode", "Methode", false], ["bedrag", "Bedrag", false],
 ];
+const LOCKED_COLS = new Set(EXP_COLS.filter(([, , lock]) => lock).map(([k]) => k));
 
 export default function Dashboard() {
   const [tab, setTab] = useState("overzicht");
@@ -55,11 +56,25 @@ export default function Dashboard() {
   const [hiddenCols, setHiddenCols] = useState<string[]>([]);
   useEffect(() => { try { const s = localStorage.getItem("dmx_hiddencols"); if (s) setHiddenCols(JSON.parse(s)); } catch {} }, []);
   const toggleCol = (k: string) => setHiddenCols((h) => {
+    if (LOCKED_COLS.has(k)) return h;
     const n = h.includes(k) ? h.filter((x) => x !== k) : [...h, k];
     try { localStorage.setItem("dmx_hiddencols", JSON.stringify(n)); } catch {}
     return n;
   });
-  const showCol = (k: string) => !hiddenCols.includes(k);
+  const showCol = (k: string) => LOCKED_COLS.has(k) || !hiddenCols.includes(k);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const toggleSel = (id: string) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const clearSel = () => setSelected(new Set());
+  const deleteSelected = async () => {
+    const ids = [...selected];
+    if (!ids.length) return;
+    if (!confirm(`${ids.length} transactie(s) verwijderen?`)) return;
+    try {
+      await fetch(`/api/expense`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) });
+      clearSel();
+      await reloadData();
+    } catch {}
+  };
   const [pl, setPl] = useState<any>(null);
   const [data, setData] = useState<any>({ expenses: [], liquid: [], openInvoices: [] });
   const [loading, setLoading] = useState(true);
@@ -371,23 +386,34 @@ export default function Dashboard() {
                 .filter((e: any) => !expMonth || (e.date || "").startsWith(expMonth))
                 .sort((a: any, b: any) => (b.date || "").localeCompare(a.date || ""));
               const visCount = EXP_COLS.filter(([k]) => showCol(k)).length;
+              const allSel = rows.length > 0 && rows.every((e: any) => selected.has(e.id));
+              const toggleAll = () => { const n = new Set(selected); allSel ? rows.forEach((e: any) => n.delete(e.id)) : rows.forEach((e: any) => n.add(e.id)); setSelected(n); };
               return (
                 <Card title="Uitgaves" subtitle={`${rows.length} regels${data.importedCount ? ` · ${data.importedCount} geïmporteerd` : ""} · categorie wijzigen = onthouden`}>
                   <div className="colbar">
                     <span className="dim">Kolommen:</span>
-                    {EXP_COLS.map(([k, l]) => (
+                    {EXP_COLS.filter(([k]) => !LOCKED_COLS.has(k)).map(([k, l]) => (
                       <button key={k} className={`colchip ${showCol(k) ? "on" : ""}`} onClick={() => toggleCol(k)}>{l}</button>
                     ))}
                   </div>
+                  {selected.size > 0 && (
+                    <div className="bulkbar">
+                      <span>{selected.size} geselecteerd</span>
+                      <button className="bulkdel" onClick={deleteSelected}><Trash2 size={14} /> Verwijderen</button>
+                      <button className="bulkclear" onClick={clearSel}>Deselecteren</button>
+                    </div>
+                  )}
                   <div className="table-wrap">
                     <table className="table">
                       <thead><tr>
+                        <th className="selcol"><input type="checkbox" checked={allSel} onChange={toggleAll} /></th>
                         {EXP_COLS.map(([k, l]) => showCol(k) ? <th key={k} className={k === "bedrag" ? "r" : ""}>{l}</th> : null)}
                       </tr></thead>
                       <tbody>
-                        {rows.length === 0 && <tr><td colSpan={visCount} className="dim center">Geen uitgaves in deze periode.</td></tr>}
+                        {rows.length === 0 && <tr><td colSpan={visCount + 1} className="dim center">Geen uitgaves in deze periode.</td></tr>}
                         {rows.map((e: any, i: number) => (
-                          <ExpenseRow key={e.id || i} e={e} cats={data.categories || []} show={showCol} onCat={saveCat} onNote={saveNote} />
+                          <ExpenseRow key={e.id || i} e={e} cats={data.categories || []} show={showCol}
+                            sel={selected.has(e.id)} onSel={() => toggleSel(e.id)} onCat={saveCat} onNote={saveNote} />
                         ))}
                       </tbody>
                     </table>
@@ -518,12 +544,13 @@ function ImportPanel({ onDone }: any) {
   );
 }
 
-function ExpenseRow({ e, cats, show, onCat, onNote }: any) {
+function ExpenseRow({ e, cats, show, sel, onSel, onCat, onNote }: any) {
   const [note, setNote] = useState(e.note || "");
   useEffect(() => { setNote(e.note || ""); }, [e.note, e.id]);
   const options: string[] = cats.includes(e.category) ? cats : [e.category, ...cats];
   return (
-    <tr className={e.edited ? "edited" : ""}>
+    <tr className={`${e.edited ? "edited" : ""} ${sel ? "selrow" : ""}`}>
+      <td className="selcol"><input type="checkbox" checked={!!sel} onChange={onSel} /></td>
       {show("date") && <td className="nowrap">{e.date ? ddmmyyyy(e.date) : "—"}</td>}
       {show("omschrijving") && <td>{e.omschrijving}</td>}
       {show("category") && (
