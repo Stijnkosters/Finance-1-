@@ -42,6 +42,9 @@ const CATEGORY_RULES: [RegExp, string][] = [
 export const TRANSFER_RE = /revolut|wise|airwallex|\bbunq\b|\bn26\b|american express|amex|creditcard|credit ?card|kaartnummer|rekeningoverzicht|eigen rekening|naar rekening|tussenrekening|spaarrekening|tikkie|main ?· ?(eur|usd|gbp|chf|pln|sek) ?→|→ ?main ?· ?(eur|usd|gbp|chf|pln|sek)|recover negative balance|currency exchange|exchanged to/i;
 // creditcard-aflossing / bijschrijving van je eigen betaling (geen refund)
 const PAYMENT_RE = /payment|betaling|thank you|received|ontvangen|incasso|autom|direct debit|sepa|aflossing|verrekening/i;
+// kosten/fees van providers (Revolut/Wise/PayPal fee) zijn een echte kost, géén transfer
+const FEE_RE = /\bfee\b|\bfees\b|kosten|servicekosten|\bcharge\b|abonnement|subscription|business fee|plan fee/i;
+function isTransfer(desc: string) { return TRANSFER_RE.test(desc || "") && !FEE_RE.test(desc || ""); }
 // echte refund / terugbetaling van een leverancier (op een bankrekening)
 const REFUND_RE = /refund|terugbetaling|terugstorting|restitutie|chargeback|credit ?nota|geld terug|reversal|retour/i;
 function matchedExclude(hay: string, exclude: string[]) { return exclude.find((k) => hay.includes(k)) || null; }
@@ -148,7 +151,7 @@ function parseWise(lines: string[], delim: string, header: string[], exclude: st
 
     let category = "Overig";
     for (const [re, cat] of CATEGORY_RULES) { if (re.test(desc)) { category = cat; break; } }
-    if (TRANSFER_RE.test(desc)) { category = "Transfer"; transfers++; }
+    if (isTransfer(desc)) { category = "Transfer"; transfers++; }
 
     expenses.push({ date, omschrijving: desc.slice(0, 120), methode: "WISE", bedrag: Math.abs(amount), category });
   }
@@ -175,18 +178,21 @@ export function parseBankCsv(text: string, sourceKey = "rabobank") {
   }
 
   const di = header.findIndex((h) => /datum|date|boekdatum|transactiedatum|rentedatum|completed|started|created/.test(h));
-  // amount-kolom: PayPal prefereert net/gross
+  // amount-kolom: PayPal prefereert net/gross; vermijd "orig amount" (vreemde valuta) bij Revolut Business
   let ai = -1;
   if (src.type === "paypal") {
     ai = header.findIndex((h) => /\bnet\b|netto/.test(h));
     if (ai < 0) ai = header.findIndex((h) => /gross|bruto/.test(h));
   }
+  if (ai < 0) ai = header.findIndex((h) => /^amount$|^bedrag$/.test(h));
+  if (ai < 0) ai = header.findIndex((h) => /bedrag|amount/.test(h) && !/orig|total/.test(h));
   if (ai < 0) ai = header.findIndex((h) => /bedrag|amount/.test(h));
 
   const nameIdx = header.findIndex((h) => /naam tegenpartij|tegenpartij|naam|counterparty|merchant|name/.test(h));
   const descIdxs = header.map((h, i) => (/omschrijving|mededeling|description|memo|narrative|reference/.test(h) ? i : -1)).filter((i) => i >= 0);
   const balIdx = header.findIndex((h) => /saldo na trn|saldo|running balance|^balance$|balance$/.test(h));
-  const curIdx = header.findIndex((h) => /^currency$|^valuta$|^munt$|muntsoort|ccy/.test(h));
+  // valuta van het bedrag: "payment currency" (Revolut Business) of "currency" (retail)
+  const curIdx = header.findIndex((h) => /payment currency|^currency$|^valuta$|^munt$|muntsoort|^ccy$/.test(h));
 
   const expenses: any[] = [];
   let excluded = 0, income = 0, transfers = 0, skipped = 0, otherCurrency = 0;
@@ -254,7 +260,7 @@ export function parseBankCsv(text: string, sourceKey = "rabobank") {
       { const xk = matchedExclude(hay, exclude); if (xk) { excluded++; excludedRows.push({ date, omschrijving: desc.slice(0, 120), methode: src.label, bedrag: Math.abs(amount), reason: xk }); continue; } }
       let ccat = "Overig";
       for (const [re, c] of CATEGORY_RULES) { if (re.test(desc)) { ccat = c; break; } }
-      if (TRANSFER_RE.test(desc)) { ccat = "Transfer"; transfers++; }
+      if (isTransfer(desc)) { ccat = "Transfer"; transfers++; }
       expenses.push({ date, omschrijving: desc.slice(0, 120), methode: src.label, bedrag: amount, category: ccat });
       continue;
     }
@@ -269,7 +275,7 @@ export function parseBankCsv(text: string, sourceKey = "rabobank") {
         continue;
       }
       income++;
-      incomeRows.push({ date, omschrijving: desc.slice(0, 120), methode: src.label, bedrag: Math.abs(amount), category: TRANSFER_RE.test(desc) ? "Transfer" : "Inkomsten" });
+      incomeRows.push({ date, omschrijving: desc.slice(0, 120), methode: src.label, bedrag: Math.abs(amount), category: isTransfer(desc) ? "Transfer" : "Inkomsten" });
       continue; // overige inkomsten (uitbetalingen, transfers) = cashflow "erin" + inkomstenlijst
     }
     if (amount === 0) { income++; continue; }
@@ -278,7 +284,7 @@ export function parseBankCsv(text: string, sourceKey = "rabobank") {
 
     let category = "Overig";
     for (const [re, cat] of CATEGORY_RULES) { if (re.test(desc)) { category = cat; break; } }
-    if (TRANSFER_RE.test(desc)) { category = "Transfer"; transfers++; }
+    if (isTransfer(desc)) { category = "Transfer"; transfers++; }
 
     expenses.push({ date, omschrijving: desc.slice(0, 120), methode: src.label, bedrag: Math.abs(amount), category });
   }
@@ -313,7 +319,7 @@ export function classifyTx(sourceKey: string, desc: string, amount: number): TxK
       return { kind: "expense", category: catOf(), bedrag: -Math.abs(amount) }; // refund
     }
     if (xMatch) return { kind: "excluded", reason: xMatch };
-    if (TRANSFER_RE.test(desc || "")) return { kind: "expense", category: "Transfer", bedrag: amount };
+    if (isTransfer(desc)) return { kind: "expense", category: "Transfer", bedrag: amount };
     return { kind: "expense", category: catOf(), bedrag: amount };
   }
 
@@ -321,10 +327,10 @@ export function classifyTx(sourceKey: string, desc: string, amount: number): TxK
   if (amount > 0) {
     if (REFUND_RE.test(desc || "") && !TRANSFER_RE.test(desc || "") && !xMatch)
       return { kind: "expense", category: catOf(), bedrag: -Math.abs(amount) }; // refund
-    return { kind: "income", category: TRANSFER_RE.test(desc || "") ? "Transfer" : "Inkomsten", bedrag: Math.abs(amount) };
+    return { kind: "income", category: isTransfer(desc) ? "Transfer" : "Inkomsten", bedrag: Math.abs(amount) };
   }
   if (xMatch) return { kind: "excluded", reason: xMatch };
-  return { kind: "expense", category: TRANSFER_RE.test(desc || "") ? "Transfer" : catOf(), bedrag: Math.abs(amount) };
+  return { kind: "expense", category: isTransfer(desc) ? "Transfer" : catOf(), bedrag: Math.abs(amount) };
 }
 
 export function dedupKey(e: any): string {
