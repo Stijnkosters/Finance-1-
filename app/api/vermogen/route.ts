@@ -67,12 +67,22 @@ export async function GET(req: Request) {
   const netNow = Math.round((assetsTotal - liabTotal) * 100) / 100;
 
   const cf = await readJson("cashflow-history.json", {});
+  const openings = await readJson("openings.json", { date: "2026-01-01", balances: {} });
+  const opDate = openings.date || "2026-01-01";
+  const opMap = openings.balances || {};
+  const findOpening = (name: string) => {
+    const k = Object.keys(opMap).find((kk) => name && (name.toLowerCase().includes(kk.toLowerCase()) || kk.toLowerCase().includes(name.toLowerCase())));
+    return k != null && opMap[k] !== "" && opMap[k] != null ? Number(opMap[k]) : null;
+  };
   const histSources = Object.keys(hist);
   const cfSources = Object.keys(cf);
 
   const monthsSet = new Set<string>();
   for (const s of histSources) for (const m of Object.keys(hist[s])) monthsSet.add(m);
   for (const s of cfSources) for (const m of Object.keys(cf[s])) monthsSet.add(m);
+  // beginsaldo-maanden (handmatige ankers, bijv. 1 jan) ook meenemen
+  for (const a of assets) if (a?.date) monthsSet.add(String(a.date).slice(0, 7));
+  if (Object.keys(opMap).length) monthsSet.add(opDate.slice(0, 7));
   const months = [...monthsSet].sort();
 
   const matchKey = (name: string, keys: string[]) =>
@@ -81,13 +91,19 @@ export async function GET(req: Request) {
 
   // Per bezitting bepalen hoe de maandwaarde tot stand komt:
   //  1) CSV-saldohistorie (exact)  2) terugrekenen uit ankersaldo + stromen  3) vlak
-  type Plan = { kind: "hist"; key: string } | { kind: "recon"; key: string; anchorMonth: string; anchorAmount: number } | { kind: "flat"; amount: number };
+  type Plan = { kind: "hist"; key: string } | { kind: "recon"; key: string; anchorMonth: string; anchorAmount: number; atStart: boolean } | { kind: "flat"; amount: number };
   const plans: Plan[] = assets.map((a: any) => {
     const hk = matchKey(a.name, histSources);
     if (hk) return { kind: "hist", key: hk };
+    const op = findOpening(a.name);
     const ck = matchKey(a.name, cfSources);
+    // 1) beginsaldo (1 jan) + transactiestromen = terugrekenen
+    if (op != null && ck) return { kind: "recon", key: ck, anchorMonth: opDate.slice(0, 7), anchorAmount: op, atStart: Number(opDate.slice(8, 10)) <= 1 };
+    if (op != null) return { kind: "flat", amount: op };
+    // 2) terugval: ankersaldo uit een handmatige/captured datum
     if (ck && a.date && a.amount != null && a.amount !== "") {
-      return { kind: "recon", key: ck, anchorMonth: String(a.date).slice(0, 7), anchorAmount: Number(a.amount) || 0 };
+      const atStart = Number(String(a.date).slice(8, 10)) <= 1;
+      return { kind: "recon", key: ck, anchorMonth: String(a.date).slice(0, 7), anchorAmount: Number(a.amount) || 0, atStart };
     }
     return { kind: "flat", amount: Number(a.amount) || 0 };
   });
@@ -98,16 +114,23 @@ export async function GET(req: Request) {
       const ms = Object.keys(hist[p.key]).filter((x) => x <= m).sort();
       return ms.length ? Number(hist[p.key][ms[ms.length - 1]]) || 0 : 0;
     }
-    // recon: balance_end(m) = anker ± som van nettostromen tussen m en ankermaand
+    // recon: terugrekenen uit ankersaldo + nettostromen
+    if (p.atStart) {
+      // beginsaldo aan het begin van anchorMonth -> stand_eind(m) = beginsaldo + som stromen anchorMonth..m
+      if (m < p.anchorMonth) return p.anchorAmount;
+      let s = 0;
+      for (const k of months) if (k >= p.anchorMonth && k <= m) s += netFlow(p.key, k);
+      return p.anchorAmount + s;
+    }
+    // anker = eindstand van anchorMonth
     if (m <= p.anchorMonth) {
       let s = 0;
       for (const k of months) if (k > m && k <= p.anchorMonth) s += netFlow(p.key, k);
       return p.anchorAmount - s;
-    } else {
-      let s = 0;
-      for (const k of months) if (k > p.anchorMonth && k <= m) s += netFlow(p.key, k);
-      return p.anchorAmount + s;
     }
+    let s = 0;
+    for (const k of months) if (k > p.anchorMonth && k <= m) s += netFlow(p.key, k);
+    return p.anchorAmount + s;
   };
 
   const curve = months.map((m) => {
@@ -144,7 +167,7 @@ export async function GET(req: Request) {
   return NextResponse.json({
     ok: true, assets, liabilities, assetsTotal, liabTotal, netNow, snapshots: v.snapshots || [], captured, monthlyNetWorth: curve,
     hasHistory: histSources.length > 0 || cfSources.length > 0, persisted: persistenceEnabled(),
-    asof, asofDate, asofMonths, assetsAsof, liabAsof, assetsTotalAsof, liabTotalAsof, netAsof,
+    asof, asofDate, asofMonths, assetsAsof, liabAsof, assetsTotalAsof, liabTotalAsof, netAsof, openings,
   });
 }
 
@@ -166,6 +189,16 @@ export async function POST(req: Request) {
       snaps.sort((a: any, b: any) => a.month.localeCompare(b.month));
       await writeJson("vermogen.json", { ...cur, snapshots: snaps });
       return NextResponse.json({ ok: true, snapshots: snaps });
+    }
+
+    if (body.action === "openings") {
+      const date = body.date || "2026-01-01";
+      const balances: Record<string, number> = {};
+      for (const [k, val] of Object.entries(body.balances || {})) {
+        if (val !== "" && val != null && !isNaN(Number(val))) balances[k] = Number(val);
+      }
+      await writeJson("openings.json", { date, balances });
+      return NextResponse.json({ ok: true });
     }
 
     const next = {

@@ -1,5 +1,7 @@
 // PayPal REST API: haalt saldo (Reporting Balances) en transacties (Transaction Search) op.
-// Vereist een Live REST-app: PAYPAL_CLIENT_ID + PAYPAL_SECRET (developer.paypal.com).
+// Vereist een Live REST-app met "Transaction search" aan: PAYPAL_CLIENT_ID + PAYPAL_SECRET.
+import { toEUR } from "./fx";
+
 const BASE = process.env.PAYPAL_API_BASE || "https://api-m.paypal.com";
 const CID = process.env.PAYPAL_CLIENT_ID || "";
 const SECRET = process.env.PAYPAL_SECRET || "";
@@ -21,10 +23,11 @@ async function token() {
   return j.access_token as string;
 }
 
+// Saldo van ALLE valuta-potjes, elk omgerekend naar EUR (dagkoers) en opgeteld.
 export async function paypalBalance() {
   if (!paypalConfigured()) throw new Error("PAYPAL_CLIENT_ID / PAYPAL_SECRET ontbreken.");
   const tk = await token();
-  const res = await fetch(`${BASE}/v1/reporting/balances?currency_code=EUR`, {
+  const res = await fetch(`${BASE}/v1/reporting/balances`, {
     headers: { Authorization: `Bearer ${tk}`, "Content-Type": "application/json" },
     cache: "no-store",
   });
@@ -32,12 +35,23 @@ export async function paypalBalance() {
   if (!res.ok) throw new Error(`PayPal balances ${res.status}: ${text.slice(0, 200)}`);
   let j: any = {}; try { j = JSON.parse(text); } catch {}
   const balances = j.balances || [];
-  const eurRow = balances.find((b: any) => (b.currency || b.total_balance?.currency_code) === "EUR") || balances[0];
-  const eur = Number(eurRow?.total_balance?.value ?? eurRow?.available_balance?.value ?? 0);
-  return { eur, raw: balances };
+  const today = new Date().toISOString().slice(0, 10);
+  let eur = 0;
+  const breakdown: any[] = [];
+  for (const b of balances) {
+    const cur = (b.currency || b.total_balance?.currency_code || "EUR").toUpperCase();
+    const val = Number(b.total_balance?.value ?? b.available_balance?.value ?? 0);
+    if (!val) continue;
+    if (cur === "EUR") { eur += val; breakdown.push({ currency: "EUR", value: val, eur: val }); continue; }
+    const e = await toEUR(val, cur, today);
+    if (e == null) { breakdown.push({ currency: cur, value: val, eur: null }); continue; }
+    eur += e;
+    breakdown.push({ currency: cur, value: val, eur: Math.round(e * 100) / 100 });
+  }
+  return { eur: Math.round(eur * 100) / 100, breakdown };
 }
 
-// transacties van de afgelopen N dagen (PayPal staat max 31 dagen per call toe)
+// Transacties van de afgelopen N dagen (PayPal: max 31 dagen per call). Vreemde valuta -> EUR.
 export async function paypalTransactions(days = 31) {
   if (!paypalConfigured()) throw new Error("PAYPAL_CLIENT_ID / PAYPAL_SECRET ontbreken.");
   const tk = await token();
@@ -50,17 +64,33 @@ export async function paypalTransactions(days = 31) {
   if (!res.ok) throw new Error(`PayPal transactions ${res.status}: ${text.slice(0, 200)}`);
   let j: any = {}; try { j = JSON.parse(text); } catch {}
   const details = j.transaction_details || [];
-  const txs = details.map((d: any) => {
+  const raw = details.map((d: any) => {
     const info = d.transaction_info || {};
     const payer = d.payer_info || {};
     const name = payer.payer_name?.alternate_full_name || payer.email_address || "";
     const note = info.transaction_note || info.transaction_subject || info.bank_reference_id || "";
     const desc = [name, note].filter(Boolean).join(" — ") || "PayPal-transactie";
+    const amt = info.transaction_amount || {};
     return {
       date: (info.transaction_initiation_date || "").slice(0, 10),
       desc,
-      amount: Number(info.transaction_amount?.value ?? 0),
+      amount: Number(amt.value ?? 0),
+      currency: (amt.currency_code || "EUR").toUpperCase(),
     };
-  }).filter((t: any) => t.date);
-  return txs;
+  }).filter((t: any) => t.date && t.amount);
+
+  // Vreemde valuta omrekenen naar EUR op de transactiedatum; originele valuta in de omschrijving tonen.
+  const txs: { date: string; desc: string; amount: number }[] = [];
+  let converted = 0, fxFailed = 0;
+  for (const t of raw) {
+    if (t.currency && t.currency !== "EUR") {
+      const e = await toEUR(t.amount, t.currency, t.date);
+      if (e == null) { fxFailed++; continue; }
+      txs.push({ date: t.date, desc: `${t.desc} [${t.currency} ${t.amount}]`, amount: e });
+      converted++;
+    } else {
+      txs.push({ date: t.date, desc: t.desc, amount: t.amount });
+    }
+  }
+  return { txs, fx: { converted, failed: fxFailed, total: raw.length } };
 }

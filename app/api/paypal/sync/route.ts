@@ -10,11 +10,15 @@ export async function GET(req: Request) {
   }
   try {
     const days = Number(new URL(req.url).searchParams.get("days") || 31);
-    let eur = 0;
-    try { eur = (await paypalBalance()).eur; await captureBalance("paypal", eur, new Date().toISOString().slice(0, 10)); } catch (e: any) { /* saldo optioneel */ }
-    const txs = await paypalTransactions(days);
+    let eur = 0; let breakdown: any[] = [];
+    try {
+      const b = await paypalBalance();
+      eur = b.eur; breakdown = b.breakdown;
+      await captureBalance("paypal", eur, new Date().toISOString().slice(0, 10));
+    } catch (e: any) { /* saldo optioneel */ }
+    const { txs, fx } = await paypalTransactions(days);
     const result = await ingestTransactions("paypal", txs);
-    return NextResponse.json({ ok: true, balance: eur, ...result });
+    return NextResponse.json({ ok: true, balance: eur, balanceBreakdown: breakdown, fx, ...result });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
   }

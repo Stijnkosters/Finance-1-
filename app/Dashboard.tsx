@@ -483,6 +483,9 @@ function VermogenPanel({ onMonth }: any) {
   const [asofMonths, setAsofMonths] = useState<any[]>([]);
   const [asofView, setAsofView] = useState<any>(null);
   const [editMode, setEditMode] = useState(false);
+  const [openings, setOpenings] = useState<Record<string, any>>({});
+  const [openDate, setOpenDate] = useState("2026-01-01");
+  const [openSaved, setOpenSaved] = useState(false);
   const [persisted, setPersisted] = useState(true);
   const [saved, setSaved] = useState(false);
   const [nbMsg, setNbMsg] = useState<string | null>(null);
@@ -523,12 +526,22 @@ function VermogenPanel({ onMonth }: any) {
         setAssets(r.assets || []); setLiab(r.liabilities || []); setSnaps(r.snapshots || []); setCaptured(r.captured || {});
         setCurve(r.monthlyNetWorth || []); setPersisted(r.persisted !== false);
         setAsof(r.asof || ""); setAsofMonths(r.asofMonths || []);
+        setOpenings((r.openings && r.openings.balances) || {}); setOpenDate((r.openings && r.openings.date) || "2026-01-01");
         setAsofView({ assets: r.assetsAsof || [], liab: r.liabAsof || [], net: r.netAsof || 0, aTot: r.assetsTotalAsof || 0, lTot: r.liabTotalAsof || 0, date: r.asofDate || "" });
       }
     } catch {}
   };
   useEffect(() => { load(); }, []);
   const pickAsof = (m: string) => { setAsof(m); load(m); };
+
+  const saveOpenings = async (next = openings, date = openDate) => {
+    try {
+      await fetch("/api/vermogen", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "openings", date, balances: next }) });
+      setOpenSaved(true); setTimeout(() => setOpenSaved(false), 1400);
+      await load(asof || undefined);
+    } catch {}
+  };
+  const setOpening = (name: string, v: string) => setOpenings((o) => ({ ...o, [name]: v }));
 
   const save = async (a = assets, l = liab) => {
     try {
@@ -635,10 +648,29 @@ function VermogenPanel({ onMonth }: any) {
       </div>
 
       {editMode ? (
-        <div className="grid2">
-          <Card title="Bezittingen" subtitle={eur(aTot)}>{rows("a", assets)}</Card>
-          <Card title="Schulden" subtitle={eur(lTot)}>{rows("l", liab)}</Card>
-        </div>
+        <>
+          <Card title={`Beginsaldo per ${ddmmyyyy(openDate)}`} subtitle={openSaved ? "✓ opgeslagen" : "vul één keer in"}>
+            <div className="vcap" style={{ marginBottom: 6 }}>
+              Vul per rekening je saldo op {ddmmyyyy(openDate)} in. De app rekent vanaf daar met je CSV-transacties élk maand-einde uit (beginsaldo + erin − eruit). Rekeningen waarvan je CSV-bestand zelf een saldo-kolom heeft (bijv. Rabo/Revolut) gebruiken dat exacte saldo.
+            </div>
+            <table className="table"><tbody>
+              {assets.map((a: any, i: number) => (
+                <tr key={i}>
+                  <td>{a.name}</td>
+                  <td className="r" style={{ width: 160 }}>
+                    <input className="dinp" type="number" step="0.01" placeholder="0,00" style={{ width: 130, textAlign: "right" }}
+                      value={openings[a.name] ?? ""} onChange={(e) => setOpening(a.name, e.target.value)} onBlur={() => saveOpenings()} />
+                  </td>
+                </tr>
+              ))}
+            </tbody></table>
+            <div className="vcap" style={{ marginTop: 8 }}>Opslaan gebeurt automatisch zodra je een veld verlaat.{openSaved ? " ✓ opgeslagen" : ""}</div>
+          </Card>
+          <div className="grid2" style={{ marginTop: 14 }}>
+            <Card title="Bezittingen (huidige stand)" subtitle={eur(aTot)}>{rows("a", assets)}</Card>
+            <Card title="Schulden (huidige stand)" subtitle={eur(lTot)}>{rows("l", liab)}</Card>
+          </div>
+        </>
       ) : (
         <div className="grid2">
           <Card title={`Bezittingen · per ${view.date ? ddmmyyyy(view.date) : "—"}`} subtitle={eur(view.aTot)}>
@@ -766,7 +798,14 @@ function ImportPanel({ onDone, onReload, cats }: any) {
     setPpBusy(true); setPpMsg(null);
     try {
       const r = await fetch("/api/paypal/sync").then((x) => x.json());
-      if (r.ok) { setPpMsg(`PayPal: saldo ${r.balance ? eur(r.balance) : "?"} · ${r.staged} nieuw in wachtrij · ${r.income} inkomend · ${r.duplicates} dubbel.`); await refreshPending(); onReload && onReload(); }
+      if (r.ok) {
+        const bd = (r.balanceBreakdown || []).filter((b: any) => b.currency !== "EUR");
+        const bdTxt = bd.length ? ` (incl. ${bd.map((b: any) => `${b.currency} ${b.value}${b.eur != null ? `→${eur(b.eur)}` : " (koers ?)"}`).join(", ")})` : "";
+        const fxTxt = r.fx && r.fx.converted ? ` · ${r.fx.converted} vreemde valuta omgerekend` : "";
+        const fxFail = r.fx && r.fx.failed ? ` · ${r.fx.failed} koers niet gevonden` : "";
+        setPpMsg(`PayPal: saldo ${r.balance ? eur(r.balance) : "?"}${bdTxt} · ${r.staged} nieuw in wachtrij · ${r.income} inkomend · ${r.duplicates} dubbel${fxTxt}${fxFail}.`);
+        await refreshPending(); onReload && onReload();
+      }
       else setPpMsg(r.error || "Mislukt.");
     } catch (e: any) { setPpMsg(e.message); } finally { setPpBusy(false); }
   };
