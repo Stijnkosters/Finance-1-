@@ -22,11 +22,16 @@ const ddmmyyyy = (iso: string) => { const [y, m, d] = iso.split("-"); return `${
 function rangeFor(period: string) {
   const to = new Date();
   const from = new Date();
+  const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  if (period === "dezemaand") {
+    const y = to.getFullYear(), m = to.getMonth();
+    return { from: ymd(new Date(y, m, 1)), to: ymd(new Date(y, m + 1, 0)) };
+  }
   if (period === "vandaag") { /* same day */ }
   else if (period === "week") from.setDate(to.getDate() - 6);
   else if (period === "maand") from.setDate(to.getDate() - 29);
   else if (period === "kwartaal") from.setDate(to.getDate() - 89);
-  return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
+  return { from: ymd(from), to: ymd(to) };
 }
 
 function lastMonths(n: number) {
@@ -54,7 +59,7 @@ const LOCKED_COLS = new Set(EXP_COLS.filter(([, , lock]) => lock).map(([k]) => k
 
 export default function Dashboard() {
   const [tab, setTab] = useState("overzicht");
-  const [period, setPeriod] = useState("maand");
+  const [period, setPeriod] = useState("dezemaand");
   const [fromInput, setFromInput] = useState("");
   const [toInput, setToInput] = useState("");
   const [monthSel, setMonthSel] = useState("");
@@ -222,7 +227,7 @@ export default function Dashboard() {
           {tab !== "import" && tab !== "uitgaves" && (
             <div className="ctrls">
               <div className="seg">
-                {[["vandaag", "Vandaag"], ["week", "Week"], ["maand", "30d"], ["kwartaal", "90d"]].map(([v, l]) => (
+                {[["dezemaand", "Deze maand"], ["vandaag", "Vandaag"], ["week", "Week"], ["maand", "30d"], ["kwartaal", "90d"]].map(([v, l]) => (
                   <button key={v} className={!custom && period === v ? "on" : ""} onClick={() => pickQuick(v)}>{l}</button>
                 ))}
               </div>
@@ -474,6 +479,10 @@ function VermogenPanel({ onMonth }: any) {
   const [captured, setCaptured] = useState<any>({});
   const [curve, setCurve] = useState<any[]>([]);
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [asof, setAsof] = useState<string>("");
+  const [asofMonths, setAsofMonths] = useState<any[]>([]);
+  const [asofView, setAsofView] = useState<any>(null);
+  const [editMode, setEditMode] = useState(false);
   const [persisted, setPersisted] = useState(true);
   const [saved, setSaved] = useState(false);
   const [nbMsg, setNbMsg] = useState<string | null>(null);
@@ -506,13 +515,20 @@ function VermogenPanel({ onMonth }: any) {
     finally { setWiseBusy(false); }
   };
 
-  const load = async () => {
+  const load = async (asOf?: string) => {
     try {
-      const r = await fetch("/api/vermogen").then((x) => x.json());
-      if (r.ok) { setAssets(r.assets || []); setLiab(r.liabilities || []); setSnaps(r.snapshots || []); setCaptured(r.captured || {}); setCurve(r.monthlyNetWorth || []); setPersisted(r.persisted !== false); }
+      const q = asOf ? `?asof=${asOf}` : "";
+      const r = await fetch(`/api/vermogen${q}`).then((x) => x.json());
+      if (r.ok) {
+        setAssets(r.assets || []); setLiab(r.liabilities || []); setSnaps(r.snapshots || []); setCaptured(r.captured || {});
+        setCurve(r.monthlyNetWorth || []); setPersisted(r.persisted !== false);
+        setAsof(r.asof || ""); setAsofMonths(r.asofMonths || []);
+        setAsofView({ assets: r.assetsAsof || [], liab: r.liabAsof || [], net: r.netAsof || 0, aTot: r.assetsTotalAsof || 0, lTot: r.liabTotalAsof || 0, date: r.asofDate || "" });
+      }
     } catch {}
   };
   useEffect(() => { load(); }, []);
+  const pickAsof = (m: string) => { setAsof(m); load(m); };
 
   const save = async (a = assets, l = liab) => {
     try {
@@ -592,22 +608,55 @@ function VermogenPanel({ onMonth }: any) {
     </div>
   );
 
+  const view = asofView || { assets: [], liab: [], net: 0, aTot: 0, lTot: 0, date: "" };
+  const showNet = editMode ? net : view.net;
+  const showA = editMode ? aTot : view.aTot;
+  const showL = editMode ? lTot : view.lTot;
+
   return (
     <>
       {!persisted && <div className="banner warn">Geen opslag actief — zet DATA_DIR + Railway Volume, anders wordt je vermogen niet bewaard.</div>}
 
-      <div className={`hero ${net >= 0 ? "up" : "down"}`} style={{ marginBottom: 18, gridTemplateColumns: "1fr" }}>
+      <div className="ctrls" style={{ marginBottom: 12, flexWrap: "wrap" }}>
+        <span className="dim" style={{ fontSize: 13 }}>Peildatum:</span>
+        <select className="msel" value={asof} onChange={(e) => pickAsof(e.target.value)} disabled={editMode}>
+          {asofMonths.map((m: any) => <option key={m.val} value={m.val}>einde {m.label}</option>)}
+        </select>
+        <button className={`colchip ${!editMode ? "on" : ""}`} onClick={() => { setEditMode(false); load(asof || undefined); }}>Snapshot (alles gelijk)</button>
+        <button className={`colchip ${editMode ? "on" : ""}`} onClick={() => setEditMode(true)}>Balansen bewerken</button>
+      </div>
+
+      <div className={`hero ${showNet >= 0 ? "up" : "down"}`} style={{ marginBottom: 18, gridTemplateColumns: "1fr" }}>
         <div>
-          <div className="hero-label">NETTO VERMOGEN</div>
-          <div className="hero-value">{net >= 0 ? <TrendingUp size={30} /> : <TrendingDown size={30} />} {eur(net)}</div>
-          <div className="hero-note">Bezittingen {eur(aTot)} − schulden {eur(lTot)}.{saved ? " ✓ opgeslagen" : ""}</div>
+          <div className="hero-label">NETTO VERMOGEN{!editMode && view.date ? ` · STAND PER ${ddmmyyyy(view.date)}` : ""}</div>
+          <div className="hero-value">{showNet >= 0 ? <TrendingUp size={30} /> : <TrendingDown size={30} />} {eur(showNet)}</div>
+          <div className="hero-note">Bezittingen {eur(showA)} − schulden {eur(showL)}.{editMode && saved ? " ✓ opgeslagen" : ""}{!editMode ? " Alle rekeningen op dezelfde datum." : ""}</div>
         </div>
       </div>
 
-      <div className="grid2">
-        <Card title="Bezittingen" subtitle={eur(aTot)}>{rows("a", assets)}</Card>
-        <Card title="Schulden" subtitle={eur(lTot)}>{rows("l", liab)}</Card>
-      </div>
+      {editMode ? (
+        <div className="grid2">
+          <Card title="Bezittingen" subtitle={eur(aTot)}>{rows("a", assets)}</Card>
+          <Card title="Schulden" subtitle={eur(lTot)}>{rows("l", liab)}</Card>
+        </div>
+      ) : (
+        <div className="grid2">
+          <Card title={`Bezittingen · per ${view.date ? ddmmyyyy(view.date) : "—"}`} subtitle={eur(view.aTot)}>
+            <table className="table"><tbody>
+              {view.assets.map((r: any, i: number) => (
+                <tr key={i}><td>{r.name}</td><td className="r mono strong">{eur(r.amount)}</td><td className="r">{r.auto ? <span className="vcapok">auto</span> : <span className="dim" style={{ fontSize: 11 }}>handmatig</span>}</td></tr>
+              ))}
+            </tbody></table>
+          </Card>
+          <Card title={`Schulden · per ${view.date ? ddmmyyyy(view.date) : "—"}`} subtitle={eur(view.lTot)}>
+            <table className="table"><tbody>
+              {view.liab.map((r: any, i: number) => (
+                <tr key={i}><td>{r.name}</td><td className="r mono strong">{eur(r.amount)}</td></tr>
+              ))}
+            </tbody></table>
+          </Card>
+        </div>
+      )}
 
       <div className="ctrls" style={{ marginTop: 10 }}>
         <button className="vadd" onClick={pullNicheBay} disabled={nbBusy}>{nbBusy ? "Bezig…" : "↻ NicheBay saldo ophalen"}</button>

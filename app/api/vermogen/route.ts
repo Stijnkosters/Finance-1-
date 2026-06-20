@@ -55,7 +55,7 @@ function mergeCaptured(rows: any[], captured: any) {
   return merged;
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   const v = await readJson("vermogen.json", null) || SEED;
   const captured = await readJson("balances.json", {});
   const hist = await readJson("balances-history.json", {});
@@ -118,7 +118,34 @@ export async function GET() {
     return { month: m, net: Math.round((total - liabTotal) * 100) / 100, in: Math.round(inn * 100) / 100, out: Math.round(out * 100) / 100 };
   });
 
-  return NextResponse.json({ ok: true, assets, liabilities, assetsTotal, liabTotal, netNow, snapshots: v.snapshots || [], captured, monthlyNetWorth: curve, hasHistory: histSources.length > 0 || cfSources.length > 0, persisted: persistenceEnabled() });
+  // Peildatum-snapshot: elke rekening op het einde van een gekozen maand (alles gelijk).
+  const lastDayOf = (ym: string) => {
+    const [y, mm] = ym.split("-").map(Number);
+    const d = new Date(y, mm, 0).getDate();
+    return `${ym}-${String(d).padStart(2, "0")}`;
+  };
+  const nowMonth = new Date().toISOString().slice(0, 7);
+  const asofMonths = (months.length ? months : [nowMonth]).map((m) => ({
+    val: m, label: new Date(Number(m.slice(0, 4)), Number(m.slice(5, 7)) - 1, 1).toLocaleDateString("nl-NL", { month: "long", year: "numeric" }), date: lastDayOf(m),
+  }));
+  const reqAsof = new URL(req.url).searchParams.get("asof");
+  const asof = reqAsof && asofMonths.some((x) => x.val === reqAsof) ? reqAsof : asofMonths[asofMonths.length - 1].val;
+  const asofDate = lastDayOf(asof);
+
+  const assetsAsof = assets.map((a: any, i: number) => ({
+    name: a.name, amount: Math.round(assetAt(plans[i], asof) * 100) / 100, date: asofDate, auto: plans[i].kind !== "flat",
+  }));
+  // schulden hebben (nog) geen maandhistorie -> vlakke huidige stand op de peildatum
+  const liabAsof = liabilities.map((l: any) => ({ name: l.name, amount: Number(l.amount) || 0, date: asofDate }));
+  const assetsTotalAsof = Math.round(sum(assetsAsof) * 100) / 100;
+  const liabTotalAsof = Math.round(sum(liabAsof) * 100) / 100;
+  const netAsof = Math.round((assetsTotalAsof - liabTotalAsof) * 100) / 100;
+
+  return NextResponse.json({
+    ok: true, assets, liabilities, assetsTotal, liabTotal, netNow, snapshots: v.snapshots || [], captured, monthlyNetWorth: curve,
+    hasHistory: histSources.length > 0 || cfSources.length > 0, persisted: persistenceEnabled(),
+    asof, asofDate, asofMonths, assetsAsof, liabAsof, assetsTotalAsof, liabTotalAsof, netAsof,
+  });
 }
 
 export async function POST(req: Request) {
