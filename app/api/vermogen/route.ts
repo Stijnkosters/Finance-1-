@@ -3,7 +3,7 @@ import { readJson, writeJson, persistenceEnabled } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
-// Handmatige vermogenssheet: jij vult zelf in, kiest zelf de datum, drukt zelf op opslaan.
+// Handmatige vermogenssheet (zakelijk + privé). Jij vult zelf in, kiest de datum, drukt zelf op opslaan.
 // CSV-imports raken dit NIET — die zijn alleen voor Overzicht / Netto P&L.
 const SEED = {
   assets: [
@@ -13,12 +13,24 @@ const SEED = {
     { name: "PayPal", amount: 0 },
     { name: "Shopify uit te betalen", amount: 0 },
     { name: "NicheBay saldo", amount: 0 },
+    { name: "Voorraad", amount: 0 },
   ],
   liabilities: [
     { name: "American Express", amount: 0 },
     { name: "Rabo creditcard", amount: 0 },
     { name: "BTW-reservering", amount: 0 },
     { name: "Openstaande facturen", amount: 0 },
+  ],
+  assetsPrive: [
+    { name: "Privé betaalrekening", amount: 0 },
+    { name: "Spaarrekening", amount: 0 },
+    { name: "Beleggingen", amount: 0 },
+    { name: "Crypto", amount: 0 },
+    { name: "Contant", amount: 0 },
+  ],
+  liabPrive: [
+    { name: "Privé creditcard", amount: 0 },
+    { name: "Leningen", amount: 0 },
   ],
   date: "",
   snapshots: [] as any[],
@@ -28,18 +40,23 @@ const sum = (rows: any[]) => (rows || []).reduce((a, r) => a + (Number(r.amount)
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
+function totals(v: any) {
+  const aZ = r2(sum(v.assets)), lZ = r2(sum(v.liabilities));
+  const aP = r2(sum(v.assetsPrive)), lP = r2(sum(v.liabPrive));
+  const netZ = r2(aZ - lZ), netP = r2(aP - lP), netT = r2(netZ + netP);
+  return { aZ, lZ, aP, lP, netZ, netP, netT };
+}
+
 export async function GET() {
   const v = (await readJson("vermogen.json", null)) || SEED;
-  const assets = v.assets || [];
-  const liabilities = v.liabilities || [];
-  const snapshots = (v.snapshots || []).slice().sort((a: any, b: any) => String(a.date).localeCompare(String(b.date)));
-  const assetsTotal = r2(sum(assets));
-  const liabTotal = r2(sum(liabilities));
-  const netNow = r2(assetsTotal - liabTotal);
-  return NextResponse.json({
-    ok: true, assets, liabilities, date: v.date || todayStr(), snapshots,
-    assetsTotal, liabTotal, netNow, persisted: persistenceEnabled(),
-  });
+  // backwards-compat: zorg dat privé-arrays bestaan
+  const data = {
+    assets: v.assets || [], liabilities: v.liabilities || [],
+    assetsPrive: v.assetsPrive || [], liabPrive: v.liabPrive || [],
+    date: v.date || todayStr(), snapshots: (v.snapshots || []).slice().sort((a: any, b: any) => String(a.date).localeCompare(String(b.date))),
+  };
+  const t = totals(data);
+  return NextResponse.json({ ok: true, ...data, totals: t, persisted: persistenceEnabled() });
 }
 
 export async function POST(req: Request) {
@@ -48,33 +65,37 @@ export async function POST(req: Request) {
     const body = await req.json();
     const cur = (await readJson("vermogen.json", SEED)) || SEED;
 
-    // Opslaan + vastleggen op de door jou gekozen datum (maakt/overschrijft een meetpunt).
     if (body.action === "save") {
-      const assets = body.assets ?? cur.assets ?? [];
-      const liabilities = body.liabilities ?? cur.liabilities ?? [];
-      const date = body.date || todayStr();
-      const assetsTotal = r2(sum(assets));
-      const liabTotal = r2(sum(liabilities));
-      const net = r2(assetsTotal - liabTotal);
-      const snaps = (cur.snapshots || []).filter((s: any) => s.date !== date);
-      snaps.push({ date, net, assetsTotal, liabTotal });
+      const merged = {
+        ...cur,
+        assets: body.assets ?? cur.assets ?? [],
+        liabilities: body.liabilities ?? cur.liabilities ?? [],
+        assetsPrive: body.assetsPrive ?? cur.assetsPrive ?? [],
+        liabPrive: body.liabPrive ?? cur.liabPrive ?? [],
+        date: body.date || todayStr(),
+      };
+      const t = totals(merged);
+      const snap = { date: merged.date, net: t.netZ, netPrive: t.netP, netTotal: t.netT, assetsTotal: t.aZ, liabTotal: t.lZ, assetsPriveTotal: t.aP, liabPriveTotal: t.lP };
+      const snaps = (cur.snapshots || []).filter((s: any) => s.date !== merged.date);
+      snaps.push(snap);
       snaps.sort((a: any, b: any) => String(a.date).localeCompare(String(b.date)));
-      await writeJson("vermogen.json", { ...cur, assets, liabilities, date, snapshots: snaps });
-      return NextResponse.json({ ok: true, snapshots: snaps, net, assetsTotal, liabTotal });
+      await writeJson("vermogen.json", { ...merged, snapshots: snaps });
+      return NextResponse.json({ ok: true, snapshots: snaps, totals: t });
     }
 
-    // Verwijder een meetpunt
     if (body.action === "deleteSnapshot") {
       const snaps = (cur.snapshots || []).filter((s: any) => s.date !== body.date);
       await writeJson("vermogen.json", { ...cur, snapshots: snaps });
       return NextResponse.json({ ok: true, snapshots: snaps });
     }
 
-    // Lichte autosave van velden (zonder meetpunt), zodat je niets kwijtraakt tijdens het typen
+    // lichte autosave (zonder meetpunt)
     const next = {
       ...cur,
       assets: body.assets ?? cur.assets,
       liabilities: body.liabilities ?? cur.liabilities,
+      assetsPrive: body.assetsPrive ?? cur.assetsPrive,
+      liabPrive: body.liabPrive ?? cur.liabPrive,
       date: body.date ?? cur.date,
     };
     await writeJson("vermogen.json", next);

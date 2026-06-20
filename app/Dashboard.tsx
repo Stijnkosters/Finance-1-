@@ -475,17 +475,21 @@ export default function Dashboard() {
 function VermogenPanel() {
   const [assets, setAssets] = useState<any[]>([]);
   const [liab, setLiab] = useState<any[]>([]);
+  const [assetsP, setAssetsP] = useState<any[]>([]);
+  const [liabP, setLiabP] = useState<any[]>([]);
   const [date, setDate] = useState<string>(new Date().toISOString().slice(0, 10));
   const [snaps, setSnaps] = useState<any[]>([]);
   const [persisted, setPersisted] = useState(true);
   const [saved, setSaved] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [scope, setScope] = useState<"zakelijk" | "prive">("zakelijk");
 
   const load = async () => {
     try {
       const r = await fetch("/api/vermogen").then((x) => x.json());
       if (r.ok) {
         setAssets(r.assets || []); setLiab(r.liabilities || []);
+        setAssetsP(r.assetsPrive || []); setLiabP(r.liabPrive || []);
         setDate(r.date || new Date().toISOString().slice(0, 10));
         setSnaps(r.snapshots || []); setPersisted(r.persisted !== false);
       }
@@ -493,35 +497,41 @@ function VermogenPanel() {
   };
   useEffect(() => { load(); }, []);
 
-  // lichte autosave (geen meetpunt) zodat je niets kwijtraakt tijdens typen
-  const autosave = async (a = assets, l = liab, d = date) => {
-    try { await fetch("/api/vermogen", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ assets: a, liabilities: l, date: d }) }); } catch {}
+  const bodyNow = (over: any = {}) => ({ assets, liabilities: liab, assetsPrive: assetsP, liabPrive: liabP, date, ...over });
+  const autosave = async (over: any = {}) => {
+    try { await fetch("/api/vermogen", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(bodyNow(over)) }); } catch {}
+  };
+
+  // welke set rijen is actief
+  const list = scope === "zakelijk" ? (which: "a" | "l") => (which === "a" ? assets : liab) : (which: "a" | "l") => (which === "a" ? assetsP : liabP);
+  const setList = (which: "a" | "l", rows: any[]) => {
+    if (scope === "zakelijk") { which === "a" ? setAssets(rows) : setLiab(rows); }
+    else { which === "a" ? setAssetsP(rows) : setLiabP(rows); }
   };
 
   const edit = (which: "a" | "l", i: number, field: string, value: any) => {
     setDirty(true);
-    const apply = (r: any, idx: number) => (idx === i ? { ...r, [field]: value } : r);
-    if (which === "a") setAssets((rows) => rows.map(apply));
-    else setLiab((rows) => rows.map(apply));
+    const rows = list(which).map((r: any, idx: number) => (idx === i ? { ...r, [field]: value } : r));
+    setList(which, rows);
   };
-  const addRow = (which: "a" | "l") => {
-    setDirty(true);
-    if (which === "a") setAssets((rows) => [...rows, { name: "", amount: 0 }]);
-    else setLiab((rows) => [...rows, { name: "", amount: 0 }]);
-  };
+  const addRow = (which: "a" | "l") => { setDirty(true); setList(which, [...list(which), { name: "", amount: 0 }]); };
   const removeRow = (which: "a" | "l", i: number) => {
     setDirty(true);
-    if (which === "a") { const n = assets.filter((_, idx) => idx !== i); setAssets(n); autosave(n, liab); }
-    else { const n = liab.filter((_, idx) => idx !== i); setLiab(n); autosave(assets, n); }
+    const rows = list(which).filter((_: any, idx: number) => idx !== i);
+    setList(which, rows);
+    setTimeout(() => autosave(scope === "zakelijk" ? (which === "a" ? { assets: rows } : { liabilities: rows }) : (which === "a" ? { assetsPrive: rows } : { liabPrive: rows })), 0);
   };
 
-  const sum = (rows: any[]) => rows.reduce((a, r) => a + (Number(r.amount) || 0), 0);
-  const aTot = sum(assets), lTot = sum(liab), net = aTot - lTot;
+  const sum = (rows: any[]) => (rows || []).reduce((a, r) => a + (Number(r.amount) || 0), 0);
+  const netZ = sum(assets) - sum(liab);
+  const netP = sum(assetsP) - sum(liabP);
+  const netT = netZ + netP;
+  const aTot = scope === "zakelijk" ? sum(assets) : sum(assetsP);
+  const lTot = scope === "zakelijk" ? sum(liab) : sum(liabP);
 
-  // expliciet opslaan: legt je vermogen vast op de gekozen datum (meetpunt)
   const saveSheet = async () => {
     try {
-      const r = await fetch("/api/vermogen", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "save", assets, liabilities: liab, date }) }).then((x) => x.json());
+      const r = await fetch("/api/vermogen", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(bodyNow({ action: "save" })) }).then((x) => x.json());
       if (r.ok) { setSnaps(r.snapshots || []); setSaved(true); setDirty(false); setTimeout(() => setSaved(false), 1800); }
     } catch {}
   };
@@ -532,13 +542,13 @@ function VermogenPanel() {
     } catch {}
   };
 
-  const rows = (which: "a" | "l", list: any[]) => (
+  const rows = (which: "a" | "l") => (
     <div className="cash">
-      {list.map((r, i) => (
+      {list(which).map((r: any, i: number) => (
         <div className="vrow" key={i}>
           <input className="vname" value={r.name} placeholder="naam" onChange={(e) => edit(which, i, "name", e.target.value)} onBlur={() => autosave()} />
           <input className="vamt mono" type="number" step="0.01" value={r.amount} placeholder="0,00" onChange={(e) => edit(which, i, "amount", e.target.value)} onBlur={() => autosave()} />
-          <button className="vdel" onClick={() => removeRow(which, i)} title="Verwijderen">×</button>
+          <button className="vdel" onClick={() => removeRow(which, i)} title="Verwijderen">\u00d7</button>
         </div>
       ))}
       <button className="vadd" onClick={() => addRow(which)}>+ regel</button>
@@ -547,13 +557,13 @@ function VermogenPanel() {
 
   return (
     <>
-      {!persisted && <div className="banner warn">Geen opslag actief — zet DATA_DIR + Railway Volume, anders wordt je vermogen niet bewaard.</div>}
+      {!persisted && <div className="banner warn">Geen opslag actief \u2014 zet DATA_DIR + Railway Volume, anders wordt je vermogen niet bewaard.</div>}
 
-      <div className={`hero ${net >= 0 ? "up" : "down"}`} style={{ marginBottom: 18, gridTemplateColumns: "1fr" }}>
+      <div className={`hero ${netT >= 0 ? "up" : "down"}`} style={{ marginBottom: 14, gridTemplateColumns: "1fr" }}>
         <div>
-          <div className="hero-label">NETTO VERMOGEN · STAND PER {ddmmyyyy(date)}</div>
-          <div className="hero-value">{net >= 0 ? <TrendingUp size={30} /> : <TrendingDown size={30} />} {eur(net)}</div>
-          <div className="hero-note">Bezittingen {eur(aTot)} − schulden {eur(lTot)}.{saved ? " ✓ opgeslagen" : dirty ? " · niet opgeslagen" : ""}</div>
+          <div className="hero-label">TOTAAL VERMOGEN · STAND PER {ddmmyyyy(date)}</div>
+          <div className="hero-value">{netT >= 0 ? <TrendingUp size={30} /> : <TrendingDown size={30} />} {eur(netT)}</div>
+          <div className="hero-note">Zakelijk {eur(netZ)} · Privé {eur(netP)}.{saved ? " \u2713 opgeslagen" : dirty ? " · niet opgeslagen" : ""}</div>
         </div>
       </div>
 
@@ -562,50 +572,61 @@ function VermogenPanel() {
           <span className="dim" style={{ fontSize: 13 }}>Stand per datum:</span>
           <input className="vdate" type="date" value={date} onChange={(e) => { setDate(e.target.value); setDirty(true); }} onBlur={() => autosave()} style={{ minWidth: 150 }} />
           <button className="bulkdel" style={{ background: "var(--accent)" }} onClick={saveSheet}>Opslaan</button>
-          {saved && <span className="green" style={{ fontSize: 13 }}>✓ vastgelegd op {ddmmyyyy(date)}</span>}
+          {saved && <span className="green" style={{ fontSize: 13 }}>\u2713 vastgelegd op {ddmmyyyy(date)}</span>}
         </div>
         <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>
-          Vul je bezittingen en schulden hieronder in, kies de datum waarop deze stand geldt, en klik op <b>Opslaan</b>. Elke keer dat je opslaat leg je een meetpunt vast — zo bouw je vanzelf de grafiek hieronder op. CSV-imports raken deze sheet niet; die zijn alleen voor Overzicht / Netto P&L.
+          Vul je bezittingen en schulden in (wissel hieronder tussen <b>Zakelijk</b> en <b>Privé</b>), kies de datum, en klik op <b>Opslaan</b>. Elke keer dat je opslaat leg je een meetpunt vast. Tip: haal je winst naar privé? Dan zie je hier dat je zakelijk gelijk blijft maar je privé (en totaal) stijgt.
         </p>
       </Card>
 
-      <div className="grid2" style={{ marginTop: 14 }}>
-        <Card title="Bezittingen" subtitle={eur(aTot)}>{rows("a", assets)}</Card>
-        <Card title="Schulden" subtitle={eur(lTot)}>{rows("l", liab)}</Card>
+      <div className="ctrls" style={{ marginTop: 14 }}>
+        <button className={`colchip ${scope === "zakelijk" ? "on" : ""}`} onClick={() => setScope("zakelijk")}>Zakelijk ({eur(netZ)})</button>
+        <button className={`colchip ${scope === "prive" ? "on" : ""}`} onClick={() => setScope("prive")}>Privé ({eur(netP)})</button>
+      </div>
+
+      <div className="grid2" style={{ marginTop: 10 }}>
+        <Card title={`Bezittingen \u00b7 ${scope === "zakelijk" ? "zakelijk" : "privé"}`} subtitle={eur(aTot)}>{rows("a")}</Card>
+        <Card title={`Schulden \u00b7 ${scope === "zakelijk" ? "zakelijk" : "privé"}`} subtitle={eur(lTot)}>{rows("l")}</Card>
       </div>
 
       <div className="ctrls" style={{ marginTop: 14, justifyContent: "flex-end" }}>
         <button className="bulkdel" style={{ background: "var(--accent)" }} onClick={saveSheet}>Opslaan (stand per {ddmmyyyy(date)})</button>
-        {saved && <span className="green" style={{ fontSize: 13 }}>✓ opgeslagen</span>}
+        {saved && <span className="green" style={{ fontSize: 13 }}>\u2713 opgeslagen</span>}
       </div>
 
       {snaps.length > 0 && (
         <Card title="Vermogen over tijd" subtitle="elke keer dat je opslaat is een meetpunt">
-          <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={snaps.map((s) => ({ ...s, label: ddmmyyyy(s.date) }))}>
-              <defs><linearGradient id="vg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#0E8A52" stopOpacity={0.25} /><stop offset="100%" stopColor="#0E8A52" stopOpacity={0} /></linearGradient></defs>
+          <ResponsiveContainer width="100%" height={210}>
+            <AreaChart data={snaps.map((s) => ({ ...s, netTotal: s.netTotal ?? s.net, label: ddmmyyyy(s.date) }))}>
+              <defs>
+                <linearGradient id="vgt" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3A3FD6" stopOpacity={0.22} /><stop offset="100%" stopColor="#3A3FD6" stopOpacity={0} /></linearGradient>
+              </defs>
               <CartesianGrid vertical={false} stroke="#EEF0F4" />
               <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#8A909C" }} tickLine={false} axisLine={false} />
               <YAxis tick={{ fontSize: 11, fill: "#8A909C" }} tickLine={false} axisLine={false} width={52} tickFormatter={(v) => (v / 1000).toFixed(0) + "k"} />
-              <Tooltip formatter={(v: any) => eur(v)} labelStyle={{ color: "#1A1D24" }} />
-              <Area type="monotone" dataKey="net" stroke="#0E8A52" strokeWidth={2} fill="url(#vg)" />
+              <Tooltip formatter={(v: any, n: any) => [eur(v), n === "netTotal" ? "Totaal" : n === "net" ? "Zakelijk" : "Privé"]} labelStyle={{ color: "#1A1D24" }} />
+              <Area type="monotone" dataKey="netTotal" stroke="#3A3FD6" strokeWidth={2} fill="url(#vgt)" name="netTotal" />
+              <Area type="monotone" dataKey="net" stroke="#0E8A52" strokeWidth={1.5} fill="transparent" name="net" />
+              <Area type="monotone" dataKey="netPrive" stroke="#CE2C2C" strokeWidth={1.5} fill="transparent" name="netPrive" />
             </AreaChart>
           </ResponsiveContainer>
           <div className="table-wrap" style={{ marginTop: 8 }}>
             <table className="table">
-              <thead><tr><th>Datum</th><th className="r">Bezittingen</th><th className="r">Schulden</th><th className="r">Netto vermogen</th><th className="r">Verschil</th><th></th></tr></thead>
+              <thead><tr><th>Datum</th><th className="r">Zakelijk</th><th className="r">Privé</th><th className="r">Totaal</th><th className="r">Verschil</th><th></th></tr></thead>
               <tbody>
                 {[...snaps].reverse().map((s, i, arr) => {
+                  const tot = s.netTotal ?? s.net;
                   const prev = arr[i + 1];
-                  const delta = prev ? s.net - prev.net : null;
+                  const prevTot = prev ? (prev.netTotal ?? prev.net) : null;
+                  const delta = prevTot == null ? null : tot - prevTot;
                   return (
                     <tr key={s.date}>
                       <td className="nowrap">{ddmmyyyy(s.date)}</td>
-                      <td className="r mono">{eur(s.assetsTotal)}</td>
-                      <td className="r mono">{eur(s.liabTotal)}</td>
-                      <td className="r mono strong">{eur(s.net)}</td>
-                      <td className={`r mono ${delta == null ? "dim" : delta >= 0 ? "green" : "red"}`}>{delta == null ? "—" : `${delta >= 0 ? "\u25B2" : "\u25BC"} ${eur(Math.abs(delta))}`}</td>
-                      <td className="r"><button className="vdel" onClick={() => delSnap(s.date)} title="Meetpunt verwijderen">×</button></td>
+                      <td className="r mono">{eur(s.net)}</td>
+                      <td className="r mono">{eur(s.netPrive ?? 0)}</td>
+                      <td className="r mono strong">{eur(tot)}</td>
+                      <td className={`r mono ${delta == null ? "dim" : delta >= 0 ? "green" : "red"}`}>{delta == null ? "\u2014" : `${delta >= 0 ? "\u25B2" : "\u25BC"} ${eur(Math.abs(delta))}`}</td>
+                      <td className="r"><button className="vdel" onClick={() => delSnap(s.date)} title="Meetpunt verwijderen">\u00d7</button></td>
                     </tr>
                   );
                 })}
@@ -617,7 +638,6 @@ function VermogenPanel() {
     </>
   );
 }
-
 
 function ImportPanel({ onDone, onReload, cats }: any) {
   const [busy, setBusy] = useState(false);
