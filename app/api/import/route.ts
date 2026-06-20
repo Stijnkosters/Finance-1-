@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { parseBankCsv, dedupKey, SOURCES } from "@/lib/bankparse";
+import { parseBankCsv, dedupKey, SOURCES, classifyTx } from "@/lib/bankparse";
 import { readJson, writeJson, persistenceEnabled } from "@/lib/store";
 import { decorate } from "@/lib/meta";
+import { toEUR } from "@/lib/fx";
 
 export const dynamic = "force-dynamic";
 
@@ -39,20 +40,35 @@ export async function POST(req: Request) {
     if (!body || body.length < 10) {
       return NextResponse.json({ ok: false, error: "Leeg of ongeldig bestand." }, { status: 400 });
     }
-    const { expenses, stats, source: sourceName, endBalance, monthlyBalances, monthlyFlow, incomeRows, excludedRows } = parseBankCsv(body, source);
+    const { expenses, stats, source: sourceName, endBalance, monthlyBalances, monthlyFlow, incomeRows, excludedRows, foreignRows } = parseBankCsv(body, source);
+
+    // niet-EUR transacties omrekenen naar EUR (dagkoers) en classificeren als uitgave/inkomen
+    const allExpenses: any[] = [...expenses];
+    const allIncome: any[] = [...incomeRows];
+    let fxConverted = 0, fxFailed = 0, fxDropped = 0;
+    const srcLabel = SOURCES[source]?.label || sourceName;
+    for (const f of (foreignRows || [])) {
+      const eurAmt = await toEUR(f.amount, f.currency, f.date);
+      if (eurAmt == null) { fxFailed++; continue; }
+      const c = classifyTx(source, f.desc, eurAmt);
+      if (c.kind === "excluded" || c.kind === "skip") { fxDropped++; continue; }
+      const row = { date: f.date, omschrijving: `${(f.desc || "").slice(0, 110)} [${f.currency}]`, methode: srcLabel, bedrag: c.bedrag, category: c.category };
+      if (c.kind === "income") allIncome.push(row); else allExpenses.push(row);
+      fxConverted++;
+    }
 
     let staged = 0, duplicates = 0;
-    if (persistenceEnabled() && expenses.length) {
+    if (persistenceEnabled() && allExpenses.length) {
       const pending: any[] = await readJson("pending-import.json", []);
       const imported: any[] = await readJson("imported-expenses.json", []);
       const seen = new Set([...pending, ...imported].map(dedupKey));
-      const toAdd = expenses.filter((e) => {
+      const toAdd = allExpenses.filter((e) => {
         const k = dedupKey(e);
         if (seen.has(k)) return false;
         seen.add(k);
         return true;
       });
-      duplicates = expenses.length - toAdd.length;
+      duplicates = allExpenses.length - toAdd.length;
       if (toAdd.length) await writeJson("pending-import.json", [...pending, ...toAdd]);
       staged = toAdd.length;
     }
@@ -81,10 +97,10 @@ export async function POST(req: Request) {
     }
     // inkomende betalingen bewaren (dedup) — alleen ter info / cashflow, telt niet in P&L
     let incomeStaged = 0;
-    if (persistenceEnabled() && incomeRows && incomeRows.length) {
+    if (persistenceEnabled() && allIncome && allIncome.length) {
       const inc: any[] = await readJson("income.json", []);
       const seenI = new Set(inc.map(dedupKey));
-      const addI = incomeRows.filter((e: any) => {
+      const addI = allIncome.filter((e: any) => {
         const k = dedupKey(e);
         if (seenI.has(k)) return false;
         seenI.add(k);
@@ -97,18 +113,19 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: true,
       source: sourceName,
-      parsed: expenses.length,
+      parsed: allExpenses.length,
       staged,
       duplicates,
       incomeStaged,
       excluded: (excludedRows || []).map((e: any) => ({ ...e, id: dedupKey(e) })),
+      fx: { converted: fxConverted, failed: fxFailed, dropped: fxDropped },
       persisted: persistenceEnabled(),
       stats,
       pending: persistenceEnabled() ? await decoratedPending() : [],
       income: persistenceEnabled() ? await recentIncome() : [],
       note: !persistenceEnabled()
         ? "Geen opslag actief: voeg een Railway Volume toe en zet DATA_DIR, anders wordt de import niet bewaard."
-        : expenses.length === 0
+        : allExpenses.length === 0 && allIncome.length === 0
         ? "Geen uitgaven herkend. Stuur me één voorbeeldregel uit je CSV als de kolommen niet kloppen."
         : null,
     });

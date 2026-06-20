@@ -895,14 +895,15 @@ function ImportPanel({ onDone, onReload, cats }: any) {
             </div>
             {(() => {
               const s = res.stats || {};
-              const accounted = (res.parsed || 0) + (s.income || 0) + (s.excluded || 0) + (s.skipped || 0) + (s.otherCurrency || 0);
+              const fx = res.fx || { converted: 0, failed: 0, dropped: 0 };
+              const accounted = (res.parsed || 0) + (s.income || 0) + (s.excluded || 0) + (s.skipped || 0) + (fx.dropped || 0) + (fx.failed || 0);
               const total = s.total || 0;
               const ok = accounted === total;
               return (
-                <div className={`banner ${ok ? "info" : "warn"}`} style={{ marginTop: 12 }}>
-                  <b>{total} regels in je CSV</b> = {res.parsed || 0} uitgaven + {s.income || 0} inkomend + {s.excluded || 0} uitgesloten + {s.skipped || 0} overgeslagen{(s.otherCurrency || 0) > 0 ? ` + ${s.otherCurrency} andere valuta` : ""}{ok ? " ✓ alles verwerkt" : ` — ${total - accounted} niet verklaard`}.
-                  {(s.otherCurrency ?? 0) > 0 && <> De <b>{s.otherCurrency} niet-EUR regels</b> (bijv. USD/GBP) zijn overgeslagen — alleen euro's worden geteld, zodat een dollarbedrag niet als euro's meetelt.</>}
-                  {(s.skipped ?? 0) > 0 && <> De <b>{s.skipped} overgeslagen</b> regels hadden geen herkenbare datum/bedrag — stuur me 2 voorbeeldregels uit je CSV en ik fix het format.</>}
+                <div className={`banner ${ok && !fx.failed ? "info" : "warn"}`} style={{ marginTop: 12 }}>
+                  <b>{total} regels in je CSV</b> = {res.parsed || 0} uitgaven + {s.income || 0} inkomend + {s.excluded || 0} uitgesloten + {s.skipped || 0} overgeslagen{ok ? " ✓ alles verwerkt" : ` — ${total - accounted} niet verklaard`}.
+                  {(s.otherCurrency || 0) > 0 && <> Daarvan <b>{s.otherCurrency} niet-EUR</b> regels: {fx.converted} omgerekend naar EUR (dagkoers){fx.failed ? `, ${fx.failed} koers niet gevonden (overgeslagen)` : ""}.</>}
+                  {(s.skipped ?? 0) > 0 && <> De <b>{s.skipped} overgeslagen</b> regels hadden geen herkenbare datum/bedrag.</>}
                 </div>
               );
             })()}
