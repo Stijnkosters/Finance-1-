@@ -12,7 +12,7 @@ const eur = (n: number) => new Intl.NumberFormat("nl-NL", { style: "currency", c
 // Vaste terugval zodat de categorie-dropdowns nooit leeg zijn, ook als /api/data hapert.
 const FALLBACK_CATEGORIES = [
   "Software", "AI/Tools", "Marketing", "Boekhouding",
-  "Bankkosten", "Team", "Verzending", "Voorraad", "Leverancier betalingen", "Pandkosten", "Transfer", "Privé", "Overig",
+  "Bankkosten", "Team", "Verzending", "Voorraad", "Leverancier betalingen", "Pandkosten", "Refund", "Transfer", "Privé", "Overig",
 ];
 const numf = (n: number, d = 2) => new Intl.NumberFormat("nl-NL", { minimumFractionDigits: d, maximumFractionDigits: d }).format(n || 0);
 const pctf = (n: number) => `${(n * 100).toFixed(1).replace(".", ",")}%`;
@@ -144,7 +144,7 @@ export default function Dashboard() {
   const days = pl?.days || [];
   const totals = pl?.totals || {};
 
-  const NON_COST = ["Transfer", "Privé"];
+  const NON_COST = ["Transfer", "Privé", "Refund"];
   const expensesInRange = useMemo(() => {
     if (!pl) return [];
     const { from, to } = pl.range;

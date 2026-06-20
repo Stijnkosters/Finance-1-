@@ -71,26 +71,32 @@ export async function paypalTransactions(days = 31) {
     const note = info.transaction_note || info.transaction_subject || info.bank_reference_id || "";
     const desc = [name, note].filter(Boolean).join(" — ") || "PayPal-transactie";
     const amt = info.transaction_amount || {};
+    const code = String(info.transaction_event_code || "");
+    // T1106/T1107 = terugbetaling/omkering (klant-refund), T12xx = chargeback
+    const isRefund = /^T11(06|07)/.test(code) || /^T12/.test(code);
     return {
       date: (info.transaction_initiation_date || "").slice(0, 10),
       desc,
       amount: Number(amt.value ?? 0),
       currency: (amt.currency_code || "EUR").toUpperCase(),
+      isRefund,
     };
   }).filter((t: any) => t.date && t.amount);
 
   // Vreemde valuta omrekenen naar EUR op de transactiedatum; originele valuta in de omschrijving tonen.
-  const txs: { date: string; desc: string; amount: number }[] = [];
-  let converted = 0, fxFailed = 0;
+  const txs: { date: string; desc: string; amount: number; category?: string }[] = [];
+  let converted = 0, fxFailed = 0, refunds = 0;
   for (const t of raw) {
+    let amount = t.amount;
+    let desc = t.desc;
     if (t.currency && t.currency !== "EUR") {
       const e = await toEUR(t.amount, t.currency, t.date);
       if (e == null) { fxFailed++; continue; }
-      txs.push({ date: t.date, desc: `${t.desc} [${t.currency} ${t.amount}]`, amount: e });
+      amount = e; desc = `${t.desc} [${t.currency} ${t.amount}]`;
       converted++;
-    } else {
-      txs.push({ date: t.date, desc: t.desc, amount: t.amount });
     }
+    if (t.isRefund) { txs.push({ date: t.date, desc: `Refund — ${desc}`, amount, category: "Refund" }); refunds++; }
+    else txs.push({ date: t.date, desc, amount });
   }
-  return { txs, fx: { converted, failed: fxFailed, total: raw.length } };
+  return { txs, fx: { converted, failed: fxFailed, total: raw.length, refunds } };
 }

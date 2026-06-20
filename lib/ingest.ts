@@ -1,7 +1,7 @@
 import { readJson, writeJson, persistenceEnabled } from "./store";
 import { classifyTx, dedupKey, SOURCES } from "./bankparse";
 
-export type RawTx = { date: string; desc: string; amount: number };
+export type RawTx = { date: string; desc: string; amount: number; category?: string };
 
 // Verwerkt API-transacties (GoCardless/PayPal) via dezelfde regels + dedup als de CSV-import.
 export async function ingestTransactions(sourceKey: string, txs: RawTx[]) {
@@ -17,6 +17,11 @@ export async function ingestTransactions(sourceKey: string, txs: RawTx[]) {
     if (src.type !== "creditcard") {
       if (!flow[mk]) flow[mk] = { in: 0, out: 0 };
       if (t.amount > 0) flow[mk].in += t.amount; else flow[mk].out += -t.amount;
+    }
+    // vaste categorie (bijv. PayPal-refund) overschrijft de automatische classificatie
+    if (t.category) {
+      exp.push({ date: t.date, omschrijving: (t.desc || "(geen omschrijving)").slice(0, 120), methode: src.label, bedrag: Math.abs(t.amount), category: t.category });
+      continue;
     }
     const c = classifyTx(sourceKey, t.desc, t.amount);
     if (c.kind === "excluded") { excluded++; continue; }
