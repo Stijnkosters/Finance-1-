@@ -464,7 +464,7 @@ export default function Dashboard() {
           </>
         )}
 
-        {tab === "balans" && <VermogenPanel onMonth={(m: string) => { setExpMonth(m); setTab("uitgaves"); }} />}
+        {tab === "balans" && <VermogenPanel />}
 
         {tab === "import" && <ImportPanel onDone={load} onReload={reloadData} cats={(data.categories && data.categories.length) ? data.categories : FALLBACK_CATEGORIES} />}
       </main>
@@ -472,237 +472,117 @@ export default function Dashboard() {
   );
 }
 
-function VermogenPanel({ onMonth }: any) {
+function VermogenPanel() {
   const [assets, setAssets] = useState<any[]>([]);
   const [liab, setLiab] = useState<any[]>([]);
+  const [date, setDate] = useState<string>(new Date().toISOString().slice(0, 10));
   const [snaps, setSnaps] = useState<any[]>([]);
-  const [captured, setCaptured] = useState<any>({});
-  const [curve, setCurve] = useState<any[]>([]);
-  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
-  const [asof, setAsof] = useState<string>("");
-  const [asofMonths, setAsofMonths] = useState<any[]>([]);
-  const [asofView, setAsofView] = useState<any>(null);
-  const [editMode, setEditMode] = useState(false);
-  const [openings, setOpenings] = useState<Record<string, any>>({});
-  const [openDate, setOpenDate] = useState("2026-01-01");
-  const [openSaved, setOpenSaved] = useState(false);
   const [persisted, setPersisted] = useState(true);
   const [saved, setSaved] = useState(false);
-  const [nbMsg, setNbMsg] = useState<string | null>(null);
-  const [nbBusy, setNbBusy] = useState(false);
+  const [dirty, setDirty] = useState(false);
 
-  const pullNicheBay = async () => {
-    setNbBusy(true); setNbMsg(null);
+  const load = async () => {
     try {
-      const r = await fetch("/api/nichebay-finance").then((x) => x.json());
-      if (r.ok && r.captured) { setNbMsg(`NicheBay saldo opgehaald: ${eur(r.captured.amount)} (via ${r.captured.via}).`); await load(); }
-      else if (r.ok) setNbMsg("Geen saldo-veld gevonden in de NicheBay-respons. Stuur Stijn de output van /api/nichebay-finance.");
-      else setNbMsg(r.error || "Ophalen mislukt.");
-    } catch (e: any) { setNbMsg(e.message); }
-    finally { setNbBusy(false); }
-  };
-
-  const [wiseMsg, setWiseMsg] = useState<string | null>(null);
-  const [wiseBusy, setWiseBusy] = useState(false);
-  const pullWise = async () => {
-    setWiseBusy(true); setWiseMsg(null);
-    try {
-      const r = await fetch("/api/wise-balance").then((x) => x.json());
-      if (r.ok && r.captured) {
-        const others = (r.currencies || []).filter((c: any) => c.currency !== "EUR" && c.value);
-        const extra = others.length ? ` (andere valuta: ${others.map((c: any) => `${c.value} ${c.currency}`).join(", ")} — voeg die los toe)` : "";
-        setWiseMsg(`Wise EUR-saldo opgehaald: ${eur(r.captured.amount)}.${extra}`);
-        await load();
-      } else setWiseMsg(r.error || "Ophalen mislukt.");
-    } catch (e: any) { setWiseMsg(e.message); }
-    finally { setWiseBusy(false); }
-  };
-
-  const load = async (asOf?: string) => {
-    try {
-      const q = asOf ? `?asof=${asOf}` : "";
-      const r = await fetch(`/api/vermogen${q}`).then((x) => x.json());
+      const r = await fetch("/api/vermogen").then((x) => x.json());
       if (r.ok) {
-        setAssets(r.assets || []); setLiab(r.liabilities || []); setSnaps(r.snapshots || []); setCaptured(r.captured || {});
-        setCurve(r.monthlyNetWorth || []); setPersisted(r.persisted !== false);
-        setAsof(r.asof || ""); setAsofMonths(r.asofMonths || []);
-        setOpenings((r.openings && r.openings.balances) || {}); setOpenDate((r.openings && r.openings.date) || "2026-01-01");
-        setAsofView({ assets: r.assetsAsof || [], liab: r.liabAsof || [], net: r.netAsof || 0, aTot: r.assetsTotalAsof || 0, lTot: r.liabTotalAsof || 0, date: r.asofDate || "" });
+        setAssets(r.assets || []); setLiab(r.liabilities || []);
+        setDate(r.date || new Date().toISOString().slice(0, 10));
+        setSnaps(r.snapshots || []); setPersisted(r.persisted !== false);
       }
     } catch {}
   };
   useEffect(() => { load(); }, []);
-  const pickAsof = (m: string) => { setAsof(m); load(m); };
 
-  const saveOpenings = async (next = openings, date = openDate) => {
-    try {
-      await fetch("/api/vermogen", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "openings", date, balances: next }) });
-      setOpenSaved(true); setTimeout(() => setOpenSaved(false), 1400);
-      await load(asof || undefined);
-    } catch {}
-  };
-  const setOpening = (name: string, v: string) => setOpenings((o) => ({ ...o, [name]: v }));
-
-  const save = async (a = assets, l = liab) => {
-    try {
-      await fetch("/api/vermogen", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ assets: a, liabilities: l }) });
-      setSaved(true); setTimeout(() => setSaved(false), 1200);
-    } catch {}
+  // lichte autosave (geen meetpunt) zodat je niets kwijtraakt tijdens typen
+  const autosave = async (a = assets, l = liab, d = date) => {
+    try { await fetch("/api/vermogen", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ assets: a, liabilities: l, date: d }) }); } catch {}
   };
 
-  const today = () => new Date().toISOString().slice(0, 10);
   const edit = (which: "a" | "l", i: number, field: string, value: any) => {
-    const apply = (r: any, idx: number) => {
-      if (idx !== i) return r;
-      const nr = { ...r, [field]: value };
-      // bij handmatig invullen van een bedrag: zet datum op vandaag als die nog leeg is
-      if (field === "amount" && !r.date) nr.date = today();
-      return nr;
-    };
+    setDirty(true);
+    const apply = (r: any, idx: number) => (idx === i ? { ...r, [field]: value } : r);
     if (which === "a") setAssets((rows) => rows.map(apply));
     else setLiab((rows) => rows.map(apply));
   };
   const addRow = (which: "a" | "l") => {
-    if (which === "a") { const n = [...assets, { name: "", amount: 0 }]; setAssets(n); save(n, liab); }
-    else { const n = [...liab, { name: "", amount: 0 }]; setLiab(n); save(assets, n); }
+    setDirty(true);
+    if (which === "a") setAssets((rows) => [...rows, { name: "", amount: 0 }]);
+    else setLiab((rows) => [...rows, { name: "", amount: 0 }]);
   };
   const removeRow = (which: "a" | "l", i: number) => {
-    if (which === "a") { const n = assets.filter((_, idx) => idx !== i); setAssets(n); save(n, liab); }
-    else { const n = liab.filter((_, idx) => idx !== i); setLiab(n); save(assets, n); }
+    setDirty(true);
+    if (which === "a") { const n = assets.filter((_, idx) => idx !== i); setAssets(n); autosave(n, liab); }
+    else { const n = liab.filter((_, idx) => idx !== i); setLiab(n); autosave(assets, n); }
   };
 
   const sum = (rows: any[]) => rows.reduce((a, r) => a + (Number(r.amount) || 0), 0);
   const aTot = sum(assets), lTot = sum(liab), net = aTot - lTot;
 
-  const snapshot = async () => {
-    await save();
+  // expliciet opslaan: legt je vermogen vast op de gekozen datum (meetpunt)
+  const saveSheet = async () => {
     try {
-      const r = await fetch("/api/vermogen", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "snapshot", month }) }).then((x) => x.json());
+      const r = await fetch("/api/vermogen", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "save", assets, liabilities: liab, date }) }).then((x) => x.json());
+      if (r.ok) { setSnaps(r.snapshots || []); setSaved(true); setDirty(false); setTimeout(() => setSaved(false), 1800); }
+    } catch {}
+  };
+  const delSnap = async (d: string) => {
+    try {
+      const r = await fetch("/api/vermogen", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "deleteSnapshot", date: d }) }).then((x) => x.json());
       if (r.ok) setSnaps(r.snapshots || []);
     } catch {}
   };
 
-  const monthLabel = (m: string) => { const [y, mm] = m.split("-"); return new Date(+y, +mm - 1, 1).toLocaleDateString("nl-NL", { month: "long", year: "numeric" }); };
-
-  const capturedFor = (name: string) => {
-    const key = Object.keys(captured).find((k) => name && name.toLowerCase().includes(k.toLowerCase()));
-    if (!key) return null;
-    const c = captured[key];
-    const amount = c && c.type === "creditcard" ? Math.abs(Number(c.amount) || 0) : c.amount;
-    return { key, ...c, amount };
-  };
-
   const rows = (which: "a" | "l", list: any[]) => (
     <div className="cash">
-      {list.map((r, i) => {
-        const cap = capturedFor(r.name);
-        return (
-          <div className="vrow" key={i}>
-            <input className="vname" value={r.name} placeholder="naam" onChange={(e) => edit(which, i, "name", e.target.value)} onBlur={() => save()} />
-            <input className="vamt mono" type="number" value={r.amount} onChange={(e) => edit(which, i, "amount", e.target.value)} onBlur={() => save()} />
-            {!cap && (
-              <input className="vdate" type="date" value={r.date || ""} title="Saldo per deze datum"
-                onChange={(e) => edit(which, i, "date", e.target.value)} onBlur={() => save()} />
-            )}
-            <button className="vdel" onClick={() => removeRow(which, i)} title="Verwijderen">×</button>
-            {cap && Math.abs((cap.amount || 0) - (Number(r.amount) || 0)) > 0.005 && (
-              <button className="vcap" title={`Saldo uit import (${ddmmyyyy(cap.date)})`}
-                onClick={() => { edit(which, i, "amount", cap.amount); setTimeout(() => save(), 0); }}>
-                uit import: {eur(cap.amount)} ↺
-              </button>
-            )}
-            {cap && Math.abs((cap.amount || 0) - (Number(r.amount) || 0)) <= 0.005 && (
-              <span className="vcapok" title={`Automatisch uit import (${ddmmyyyy(cap.date)})`}>auto · {ddmmyyyy(cap.date)}</span>
-            )}
-          </div>
-        );
-      })}
+      {list.map((r, i) => (
+        <div className="vrow" key={i}>
+          <input className="vname" value={r.name} placeholder="naam" onChange={(e) => edit(which, i, "name", e.target.value)} onBlur={() => autosave()} />
+          <input className="vamt mono" type="number" step="0.01" value={r.amount} placeholder="0,00" onChange={(e) => edit(which, i, "amount", e.target.value)} onBlur={() => autosave()} />
+          <button className="vdel" onClick={() => removeRow(which, i)} title="Verwijderen">×</button>
+        </div>
+      ))}
       <button className="vadd" onClick={() => addRow(which)}>+ regel</button>
     </div>
   );
-
-  const view = asofView || { assets: [], liab: [], net: 0, aTot: 0, lTot: 0, date: "" };
-  const showNet = editMode ? net : view.net;
-  const showA = editMode ? aTot : view.aTot;
-  const showL = editMode ? lTot : view.lTot;
 
   return (
     <>
       {!persisted && <div className="banner warn">Geen opslag actief — zet DATA_DIR + Railway Volume, anders wordt je vermogen niet bewaard.</div>}
 
-      <div className="ctrls" style={{ marginBottom: 12, flexWrap: "wrap" }}>
-        <span className="dim" style={{ fontSize: 13 }}>Peildatum:</span>
-        <select className="msel" value={asof} onChange={(e) => pickAsof(e.target.value)} disabled={editMode}>
-          {asofMonths.map((m: any) => <option key={m.val} value={m.val}>einde {m.label}</option>)}
-        </select>
-        <button className={`colchip ${!editMode ? "on" : ""}`} onClick={() => { setEditMode(false); load(asof || undefined); }}>Snapshot (alles gelijk)</button>
-        <button className={`colchip ${editMode ? "on" : ""}`} onClick={() => setEditMode(true)}>Balansen bewerken</button>
-      </div>
-
-      <div className={`hero ${showNet >= 0 ? "up" : "down"}`} style={{ marginBottom: 18, gridTemplateColumns: "1fr" }}>
+      <div className={`hero ${net >= 0 ? "up" : "down"}`} style={{ marginBottom: 18, gridTemplateColumns: "1fr" }}>
         <div>
-          <div className="hero-label">NETTO VERMOGEN{!editMode && view.date ? ` · STAND PER ${ddmmyyyy(view.date)}` : ""}</div>
-          <div className="hero-value">{showNet >= 0 ? <TrendingUp size={30} /> : <TrendingDown size={30} />} {eur(showNet)}</div>
-          <div className="hero-note">Bezittingen {eur(showA)} − schulden {eur(showL)}.{editMode && saved ? " ✓ opgeslagen" : ""}{!editMode ? " Alle rekeningen op dezelfde datum." : ""}</div>
+          <div className="hero-label">NETTO VERMOGEN · STAND PER {ddmmyyyy(date)}</div>
+          <div className="hero-value">{net >= 0 ? <TrendingUp size={30} /> : <TrendingDown size={30} />} {eur(net)}</div>
+          <div className="hero-note">Bezittingen {eur(aTot)} − schulden {eur(lTot)}.{saved ? " ✓ opgeslagen" : dirty ? " · niet opgeslagen" : ""}</div>
         </div>
       </div>
 
-      {editMode ? (
-        <>
-          <Card title={`Beginsaldo per ${ddmmyyyy(openDate)}`} subtitle={openSaved ? "✓ opgeslagen" : "vul één keer in"}>
-            <div className="vcap" style={{ marginBottom: 6 }}>
-              Vul per rekening je saldo op {ddmmyyyy(openDate)} in. De app rekent vanaf daar met je CSV-transacties élk maand-einde uit (beginsaldo + erin − eruit). Rekeningen waarvan je CSV-bestand zelf een saldo-kolom heeft (bijv. Rabo/Revolut) gebruiken dat exacte saldo.
-            </div>
-            <table className="table"><tbody>
-              {assets.map((a: any, i: number) => (
-                <tr key={i}>
-                  <td>{a.name}</td>
-                  <td className="r" style={{ width: 160 }}>
-                    <input className="dinp" type="number" step="0.01" placeholder="0,00" style={{ width: 130, textAlign: "right" }}
-                      value={openings[a.name] ?? ""} onChange={(e) => setOpening(a.name, e.target.value)} onBlur={() => saveOpenings()} />
-                  </td>
-                </tr>
-              ))}
-            </tbody></table>
-            <div className="vcap" style={{ marginTop: 8 }}>Opslaan gebeurt automatisch zodra je een veld verlaat.{openSaved ? " ✓ opgeslagen" : ""}</div>
-          </Card>
-          <div className="grid2" style={{ marginTop: 14 }}>
-            <Card title="Bezittingen (huidige stand)" subtitle={eur(aTot)}>{rows("a", assets)}</Card>
-            <Card title="Schulden (huidige stand)" subtitle={eur(lTot)}>{rows("l", liab)}</Card>
-          </div>
-        </>
-      ) : (
-        <div className="grid2">
-          <Card title={`Bezittingen · per ${view.date ? ddmmyyyy(view.date) : "—"}`} subtitle={eur(view.aTot)}>
-            <table className="table"><tbody>
-              {view.assets.map((r: any, i: number) => (
-                <tr key={i}><td>{r.name}</td><td className="r mono strong">{eur(r.amount)}</td><td className="r">{r.auto ? <span className="vcapok">auto</span> : <span className="dim" style={{ fontSize: 11 }}>handmatig</span>}</td></tr>
-              ))}
-            </tbody></table>
-          </Card>
-          <Card title={`Schulden · per ${view.date ? ddmmyyyy(view.date) : "—"}`} subtitle={eur(view.lTot)}>
-            <table className="table"><tbody>
-              {view.liab.map((r: any, i: number) => (
-                <tr key={i}><td>{r.name}</td><td className="r mono strong">{eur(r.amount)}</td></tr>
-              ))}
-            </tbody></table>
-          </Card>
+      <Card title="Bijwerken" subtitle="jij vult zelf in en kiest de datum">
+        <div className="ctrls" style={{ flexWrap: "wrap", alignItems: "center" }}>
+          <span className="dim" style={{ fontSize: 13 }}>Stand per datum:</span>
+          <input className="vdate" type="date" value={date} onChange={(e) => { setDate(e.target.value); setDirty(true); }} onBlur={() => autosave()} style={{ minWidth: 150 }} />
+          <button className="bulkdel" style={{ background: "var(--accent)" }} onClick={saveSheet}>Opslaan</button>
+          {saved && <span className="green" style={{ fontSize: 13 }}>✓ vastgelegd op {ddmmyyyy(date)}</span>}
         </div>
-      )}
+        <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>
+          Vul je bezittingen en schulden hieronder in, kies de datum waarop deze stand geldt, en klik op <b>Opslaan</b>. Elke keer dat je opslaat leg je een meetpunt vast — zo bouw je vanzelf de grafiek hieronder op. CSV-imports raken deze sheet niet; die zijn alleen voor Overzicht / Netto P&L.
+        </p>
+      </Card>
 
-      <div className="ctrls" style={{ marginTop: 10 }}>
-        <button className="vadd" onClick={pullNicheBay} disabled={nbBusy}>{nbBusy ? "Bezig…" : "↻ NicheBay saldo ophalen"}</button>
-        {nbMsg && <span className="dim" style={{ fontSize: 13 }}>{nbMsg}</span>}
-      </div>
-      <div className="ctrls" style={{ marginTop: 6 }}>
-        <button className="vadd" onClick={pullWise} disabled={wiseBusy}>{wiseBusy ? "Bezig…" : "↻ Wise saldo ophalen"}</button>
-        {wiseMsg && <span className="dim" style={{ fontSize: 13 }}>{wiseMsg}</span>}
+      <div className="grid2" style={{ marginTop: 14 }}>
+        <Card title="Bezittingen" subtitle={eur(aTot)}>{rows("a", assets)}</Card>
+        <Card title="Schulden" subtitle={eur(lTot)}>{rows("l", liab)}</Card>
       </div>
 
-      {curve.length > 0 && (
-        <Card title="Vermogen per maand" subtitle="klik een maand voor de transacties">
+      <div className="ctrls" style={{ marginTop: 14, justifyContent: "flex-end" }}>
+        <button className="bulkdel" style={{ background: "var(--accent)" }} onClick={saveSheet}>Opslaan (stand per {ddmmyyyy(date)})</button>
+        {saved && <span className="green" style={{ fontSize: 13 }}>✓ opgeslagen</span>}
+      </div>
+
+      {snaps.length > 0 && (
+        <Card title="Vermogen over tijd" subtitle="elke keer dat je opslaat is een meetpunt">
           <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={curve.map((c) => ({ ...c, label: monthLabel(c.month) }))}>
+            <AreaChart data={snaps.map((s) => ({ ...s, label: ddmmyyyy(s.date) }))}>
               <defs><linearGradient id="vg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#0E8A52" stopOpacity={0.25} /><stop offset="100%" stopColor="#0E8A52" stopOpacity={0} /></linearGradient></defs>
               <CartesianGrid vertical={false} stroke="#EEF0F4" />
               <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#8A909C" }} tickLine={false} axisLine={false} />
@@ -713,64 +593,31 @@ function VermogenPanel({ onMonth }: any) {
           </ResponsiveContainer>
           <div className="table-wrap" style={{ marginTop: 8 }}>
             <table className="table">
-              <thead><tr><th>Maand</th><th className="r">Erin</th><th className="r">Eruit</th><th className="r">Netto vermogen</th><th className="r">Verschil</th><th></th></tr></thead>
-              <tbody>
-                {[...curve].reverse().map((s, i, arr) => {
-                  const prev = arr[i + 1];
-                  const delta = prev ? s.net - prev.net : null;
-                  return (
-                    <tr key={s.month} className="clickrow" onClick={() => onMonth && onMonth(s.month)}>
-                      <td className="nowrap">{monthLabel(s.month)}</td>
-                      <td className="r mono green">{s.in ? eur(s.in) : "—"}</td>
-                      <td className="r mono red">{s.out ? eur(s.out) : "—"}</td>
-                      <td className="r mono strong">{eur(s.net)}</td>
-                      <td className={`r mono ${delta == null ? "dim" : delta >= 0 ? "green" : "red"}`}>{delta == null ? "—" : `${delta >= 0 ? "▲" : "▼"} ${eur(Math.abs(delta))}`}</td>
-                      <td className="r dim" style={{ fontSize: 12 }}>transacties →</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>
-            Gebaseerd op rekeningen met saldo in de CSV (Rabobank, Revolut, Wise-statement). Rekeningen zonder saldo-historie staan vlak op hun huidige waarde. Upload je CSV's vanaf januari om de hele curve te vullen.
-          </p>
-        </Card>
-      )}
-
-      <Card title="Maand vastleggen" subtitle="bewaar je vermogen aan het eind van de maand">
-        <div className="ctrls" style={{ marginBottom: 14 }}>
-          <select className="msel" value={month} onChange={(e) => setMonth(e.target.value)}>
-            {MONTHS.map((m) => <option key={m.val} value={m.val}>{m.label}</option>)}
-          </select>
-          <button className="bulkdel" style={{ background: "var(--accent)" }} onClick={snapshot}>Snapshot opslaan</button>
-        </div>
-        {snaps.length === 0 ? <div className="muted">Nog geen snapshots. Vul je saldo's in en sla de maand op.</div> : (
-          <div className="table-wrap">
-            <table className="table">
-              <thead><tr><th>Maand</th><th className="r">Bezittingen</th><th className="r">Schulden</th><th className="r">Netto vermogen</th><th className="r">Verschil</th></tr></thead>
+              <thead><tr><th>Datum</th><th className="r">Bezittingen</th><th className="r">Schulden</th><th className="r">Netto vermogen</th><th className="r">Verschil</th><th></th></tr></thead>
               <tbody>
                 {[...snaps].reverse().map((s, i, arr) => {
                   const prev = arr[i + 1];
                   const delta = prev ? s.net - prev.net : null;
                   return (
-                    <tr key={s.month}>
-                      <td className="nowrap">{monthLabel(s.month)}</td>
+                    <tr key={s.date}>
+                      <td className="nowrap">{ddmmyyyy(s.date)}</td>
                       <td className="r mono">{eur(s.assetsTotal)}</td>
                       <td className="r mono">{eur(s.liabTotal)}</td>
                       <td className="r mono strong">{eur(s.net)}</td>
-                      <td className={`r mono ${delta == null ? "dim" : delta >= 0 ? "green" : "red"}`}>{delta == null ? "—" : `${delta >= 0 ? "▲" : "▼"} ${eur(Math.abs(delta))}`}</td>
+                      <td className={`r mono ${delta == null ? "dim" : delta >= 0 ? "green" : "red"}`}>{delta == null ? "—" : `${delta >= 0 ? "\u25B2" : "\u25BC"} ${eur(Math.abs(delta))}`}</td>
+                      <td className="r"><button className="vdel" onClick={() => delSnap(s.date)} title="Meetpunt verwijderen">×</button></td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
-        )}
-      </Card>
+        </Card>
+      )}
     </>
   );
 }
+
 
 function ImportPanel({ onDone, onReload, cats }: any) {
   const [busy, setBusy] = useState(false);
