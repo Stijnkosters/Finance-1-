@@ -14,8 +14,13 @@ async function decoratedPending() {
 
 async function recentIncome() {
   const inc: any[] = await readJson("income.json", []);
+  const meta: Record<string, any> = await readJson("income-meta.json", {});
   return inc
-    .map((e) => ({ ...e, id: dedupKey(e) }))
+    .map((e) => {
+      const id = dedupKey(e);
+      const ov = meta[id] || {};
+      return { ...e, id, category: ov.category || e.category, omschrijving: ov.label || e.omschrijving, edited: !!ov.category };
+    })
     .sort((a, b) => (a.date < b.date ? 1 : -1))
     .slice(0, 400);
 }

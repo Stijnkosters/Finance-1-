@@ -155,7 +155,7 @@ function parseWise(lines: string[], delim: string, header: string[], exclude: st
   const monthlyBalances: Record<string, number> = {};
   for (const k of Object.keys(monthBal)) monthlyBalances[k] = monthBal[k].amount;
 
-  return { expenses, stats: { total: lines.length - 1, added: expenses.length, excluded, income, transfers, skipped }, header, source: "Wise", endBalance, monthlyBalances, monthlyFlow: flow, incomeRows, excludedRows };
+  return { expenses, stats: { total: lines.length - 1, added: expenses.length, excluded, income, transfers, skipped, otherCurrency: 0 }, header, source: "Wise", endBalance, monthlyBalances, monthlyFlow: flow, incomeRows, excludedRows, };
 }
 
 export function parseBankCsv(text: string, sourceKey = "rabobank") {
@@ -163,7 +163,7 @@ export function parseBankCsv(text: string, sourceKey = "rabobank") {
   const exclude = [...EXCLUDE_DEFAULT, ...envExclude, ...(src.type === "paypal" ? PAYPAL_EXTRA_EXCLUDE : [])];
 
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
-  if (!lines.length) return { expenses: [], stats: { total: 0, added: 0, excluded: 0, income: 0, transfers: 0, skipped: 0 }, header: [], source: src.name, endBalance: null, monthlyBalances: {}, monthlyFlow: {}, incomeRows: [], excludedRows: [] };
+  if (!lines.length) return { expenses: [], stats: { total: 0, added: 0, excluded: 0, income: 0, transfers: 0, skipped: 0, otherCurrency: 0 }, header: [], source: src.name, endBalance: null, monthlyBalances: {}, monthlyFlow: {}, incomeRows: [], excludedRows: [] };
 
   const delim = lines[0].split(";").length > lines[0].split(",").length ? ";" : ",";
   const header = splitCsvLine(lines[0], delim).map((h) => h.trim().toLowerCase().replace(/"/g, ""));
@@ -185,9 +185,10 @@ export function parseBankCsv(text: string, sourceKey = "rabobank") {
   const nameIdx = header.findIndex((h) => /naam tegenpartij|tegenpartij|naam|counterparty|merchant|name/.test(h));
   const descIdxs = header.map((h, i) => (/omschrijving|mededeling|description|memo|narrative|reference/.test(h) ? i : -1)).filter((i) => i >= 0);
   const balIdx = header.findIndex((h) => /saldo na trn|saldo|running balance|^balance$|balance$/.test(h));
+  const curIdx = header.findIndex((h) => /^currency$|^valuta$|^munt$|muntsoort|ccy/.test(h));
 
   const expenses: any[] = [];
-  let excluded = 0, income = 0, transfers = 0, skipped = 0;
+  let excluded = 0, income = 0, transfers = 0, skipped = 0, otherCurrency = 0;
   let endBalance: any = null;
   const monthBal: Record<string, { amount: number; date: string }> = {};
   const flow: Record<string, { in: number; out: number }> = {};
@@ -200,6 +201,10 @@ export function parseBankCsv(text: string, sourceKey = "rabobank") {
     const amount = ai >= 0 ? parseAmount(cols[ai]) : 0;
     const blank = cols.every((c) => !c || !c.trim());
     if (!date) { if (!blank) skipped++; continue; }
+
+    // alleen EUR meenemen; andere valuta (USD/GBP) overslaan zodat ze niet als euro's tellen
+    const rowCur = curIdx >= 0 ? (cols[curIdx] || "").toUpperCase().trim() : "";
+    if (rowCur && rowCur !== "EUR") { otherCurrency++; continue; }
 
     if (balIdx >= 0 && cols[balIdx] != null && cols[balIdx] !== "") {
       const bal = parseAmount(cols[balIdx]);
@@ -272,7 +277,45 @@ export function parseBankCsv(text: string, sourceKey = "rabobank") {
   const monthlyBalances: Record<string, number> = {};
   for (const k of Object.keys(monthBal)) monthlyBalances[k] = monthBal[k].amount;
 
-  return { expenses, stats: { total: lines.length - 1, added: expenses.length, excluded, income, transfers, skipped }, header, source: src.name, endBalance, monthlyBalances, monthlyFlow: flow, incomeRows, excludedRows };
+  return { expenses, stats: { total: lines.length - 1, added: expenses.length, excluded, income, transfers, skipped, otherCurrency }, header, source: src.name, endBalance, monthlyBalances, monthlyFlow: flow, incomeRows, excludedRows };
+}
+
+export type TxKind =
+  | { kind: "expense"; category: string; bedrag: number }
+  | { kind: "income"; category: string; bedrag: number }
+  | { kind: "excluded"; reason: string }
+  | { kind: "skip" };
+
+// Classificeert één transactie met dezelfde regels als de CSV-parser.
+// Gebruikt door de API-koppelingen (GoCardless / PayPal).
+export function classifyTx(sourceKey: string, desc: string, amount: number): TxKind {
+  const src = SOURCES[sourceKey] || SOURCES.anders;
+  const exclude = [...EXCLUDE_DEFAULT, ...envExclude, ...(src.type === "paypal" ? PAYPAL_EXTRA_EXCLUDE : [])];
+  const hay = (desc || "").toLowerCase();
+  const xMatch = exclude.find((k) => hay.includes(k)) || null;
+  const catOf = () => { for (const [re, c] of CATEGORY_RULES) if (re.test(desc || "")) return c; return "Overig"; };
+
+  if (!amount) return { kind: "skip" };
+
+  if (src.type === "creditcard") {
+    if (amount < 0) {
+      if (PAYMENT_RE.test(desc || "")) return { kind: "skip" };        // kaart-aflossing
+      if (xMatch) return { kind: "excluded", reason: xMatch };
+      return { kind: "expense", category: catOf(), bedrag: -Math.abs(amount) }; // refund
+    }
+    if (xMatch) return { kind: "excluded", reason: xMatch };
+    if (TRANSFER_RE.test(desc || "")) return { kind: "expense", category: "Transfer", bedrag: amount };
+    return { kind: "expense", category: catOf(), bedrag: amount };
+  }
+
+  // bank / paypal
+  if (amount > 0) {
+    if (REFUND_RE.test(desc || "") && !TRANSFER_RE.test(desc || "") && !xMatch)
+      return { kind: "expense", category: catOf(), bedrag: -Math.abs(amount) }; // refund
+    return { kind: "income", category: TRANSFER_RE.test(desc || "") ? "Transfer" : "Inkomsten", bedrag: Math.abs(amount) };
+  }
+  if (xMatch) return { kind: "excluded", reason: xMatch };
+  return { kind: "expense", category: TRANSFER_RE.test(desc || "") ? "Transfer" : catOf(), bedrag: Math.abs(amount) };
 }
 
 export function dedupKey(e: any): string {

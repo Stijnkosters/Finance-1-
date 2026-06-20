@@ -698,6 +698,61 @@ function ImportPanel({ onDone, onReload, cats }: any) {
   const [income, setIncome] = useState<any[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+
+  // Automatische koppelingen
+  const [ppBusy, setPpBusy] = useState(false);
+  const [ppMsg, setPpMsg] = useState<string | null>(null);
+  const [bankBusy, setBankBusy] = useState(false);
+  const [bankMsg, setBankMsg] = useState<string | null>(null);
+  const [institutions, setInstitutions] = useState<any[]>([]);
+  const [connected, setConnected] = useState<any[]>([]);
+  const [chosenInst, setChosenInst] = useState("");
+
+  const editIncome = async (e: any, category: string) => {
+    setIncome((rows) => rows.map((x) => (x.id === e.id ? { ...x, category } : x)));
+    try { await fetch("/api/income", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: e.id, category }) }); } catch {}
+  };
+
+  const syncPaypal = async () => {
+    setPpBusy(true); setPpMsg(null);
+    try {
+      const r = await fetch("/api/paypal/sync").then((x) => x.json());
+      if (r.ok) { setPpMsg(`PayPal: saldo ${r.balance ? eur(r.balance) : "?"} · ${r.staged} nieuw in wachtrij · ${r.income} inkomend · ${r.duplicates} dubbel.`); await refreshPending(); onReload && onReload(); }
+      else setPpMsg(r.error || "Mislukt.");
+    } catch (e: any) { setPpMsg(e.message); } finally { setPpBusy(false); }
+  };
+
+  const loadBanks = async () => {
+    setBankBusy(true); setBankMsg(null);
+    try {
+      const r = await fetch("/api/banks").then((x) => x.json());
+      if (r.ok) { setInstitutions(r.institutions || []); setConnected(r.connected || []); if (!r.institutions?.length) setBankMsg("Geen banken gevonden."); }
+      else setBankMsg(r.error || "Mislukt.");
+    } catch (e: any) { setBankMsg(e.message); } finally { setBankBusy(false); }
+  };
+
+  const connectBank = async () => {
+    const inst = institutions.find((i) => i.id === chosenInst);
+    if (!inst) return;
+    setBankBusy(true); setBankMsg(null);
+    try {
+      const r = await fetch("/api/banks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ institutionId: inst.id, name: inst.name }) }).then((x) => x.json());
+      if (r.ok && r.link) { window.open(r.link, "_blank"); setBankMsg("Log in bij je bank in het nieuwe tabblad en geef toestemming. Klik daarna op 'Synchroniseer banken'."); loadBanks(); }
+      else setBankMsg(r.error || "Mislukt.");
+    } catch (e: any) { setBankMsg(e.message); } finally { setBankBusy(false); }
+  };
+
+  const syncBanks = async () => {
+    setBankBusy(true); setBankMsg(null);
+    try {
+      const r = await fetch("/api/banks/sync").then((x) => x.json());
+      if (r.ok) {
+        const lines = (r.results || []).map((x: any) => x.status === "OK" ? `${x.name}: ${x.balance != null ? eur(x.balance) + " · " : ""}${x.staged} nieuw · ${x.income} inkomend` : `${x.name}: ${x.note || x.error || x.status}`);
+        setBankMsg(lines.join(" | ") || r.note || "Geen banken gekoppeld.");
+        await refreshPending(); onReload && onReload();
+      } else setBankMsg(r.error || "Mislukt.");
+    } catch (e: any) { setBankMsg(e.message); } finally { setBankBusy(false); }
+  };
   const [source, setSource] = useState("rabobank");
   const [psel, setPsel] = useState<Set<string>>(new Set());
   const togglePsel = (id: string) => setPsel((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -774,6 +829,39 @@ function ImportPanel({ onDone, onReload, cats }: any) {
 
   return (
     <>
+      <Card title="Automatische koppelingen" subtitle="haal saldo + transacties op zonder CSV">
+        <p className="muted" style={{ marginTop: 0 }}>
+          Koppel je rekeningen één keer; daarna haalt de app saldo én transacties automatisch op. Transacties komen in dezelfde wachtrij als je CSV's (met dedup, dus dubbel importeren kan geen kwaad).
+        </p>
+
+        <div className="vrow" style={{ alignItems: "center", marginBottom: 10 }}>
+          <b style={{ width: 90 }}>PayPal</b>
+          <button className="vadd" onClick={syncPaypal} disabled={ppBusy}>{ppBusy ? "Bezig…" : "↻ PayPal synchroniseren"}</button>
+          {ppMsg && <span className="dim" style={{ fontSize: 13 }}>{ppMsg}</span>}
+        </div>
+
+        <div style={{ borderTop: "1px solid var(--line)", paddingTop: 10 }}>
+          <div className="ctrls" style={{ flexWrap: "wrap" }}>
+            <b style={{ width: 90 }}>Banken</b>
+            <button className="vadd" onClick={loadBanks} disabled={bankBusy}>Bank koppelen</button>
+            {institutions.length > 0 && (
+              <>
+                <select className="msel" value={chosenInst} onChange={(e) => setChosenInst(e.target.value)}>
+                  <option value="">— kies bank —</option>
+                  {institutions.map((i: any) => <option key={i.id} value={i.id}>{i.name}</option>)}
+                </select>
+                <button className="vadd" onClick={connectBank} disabled={bankBusy || !chosenInst}>Koppel →</button>
+              </>
+            )}
+            <button className="vadd" onClick={syncBanks} disabled={bankBusy}>{bankBusy ? "Bezig…" : "↻ Synchroniseer banken"}</button>
+          </div>
+          {connected.length > 0 && (
+            <div className="dim" style={{ fontSize: 13, marginTop: 6 }}>Gekoppeld: {connected.map((c: any) => c.name).join(", ")}</div>
+          )}
+          {bankMsg && <div className="banner info" style={{ marginTop: 8 }}>{bankMsg}</div>}
+        </div>
+      </Card>
+
       <Card title="Bankafschrift importeren" subtitle="bank · creditcard · PayPal">
         <p className="muted" style={{ marginTop: 0 }}>
           Kies de bron en sleep je <b>CSV</b> hierheen. De import komt eerst in de <b>wachtrij</b> hieronder — die telt nog niet mee.
@@ -807,12 +895,13 @@ function ImportPanel({ onDone, onReload, cats }: any) {
             </div>
             {(() => {
               const s = res.stats || {};
-              const accounted = (res.parsed || 0) + (s.income || 0) + (s.excluded || 0) + (s.skipped || 0);
+              const accounted = (res.parsed || 0) + (s.income || 0) + (s.excluded || 0) + (s.skipped || 0) + (s.otherCurrency || 0);
               const total = s.total || 0;
               const ok = accounted === total;
               return (
                 <div className={`banner ${ok ? "info" : "warn"}`} style={{ marginTop: 12 }}>
-                  <b>{total} regels in je CSV</b> = {res.parsed || 0} uitgaven + {s.income || 0} inkomend + {s.excluded || 0} uitgesloten + {s.skipped || 0} overgeslagen{ok ? " ✓ alles verwerkt" : ` — ${total - accounted} niet verklaard`}.
+                  <b>{total} regels in je CSV</b> = {res.parsed || 0} uitgaven + {s.income || 0} inkomend + {s.excluded || 0} uitgesloten + {s.skipped || 0} overgeslagen{(s.otherCurrency || 0) > 0 ? ` + ${s.otherCurrency} andere valuta` : ""}{ok ? " ✓ alles verwerkt" : ` — ${total - accounted} niet verklaard`}.
+                  {(s.otherCurrency ?? 0) > 0 && <> De <b>{s.otherCurrency} niet-EUR regels</b> (bijv. USD/GBP) zijn overgeslagen — alleen euro's worden geteld, zodat een dollarbedrag niet als euro's meetelt.</>}
                   {(s.skipped ?? 0) > 0 && <> De <b>{s.skipped} overgeslagen</b> regels hadden geen herkenbare datum/bedrag — stuur me 2 voorbeeldregels uit je CSV en ik fix het format.</>}
                 </div>
               );
@@ -883,21 +972,27 @@ function ImportPanel({ onDone, onReload, cats }: any) {
         return (
           <Card title="Inkomend — geld dat binnenkwam" subtitle={`${income.length} regels · echt inkomend ${eur(totReal)} · eigen overboekingen ${eur(totTransf)}`}>
             <p className="muted" style={{ marginTop: 0 }}>
-              Alleen ter info en voor je cashflow (erin/eruit). Dit telt <b>niet</b> mee in je winst — je omzet komt uit Shopify.
-              "Inkomsten" zijn o.a. je Shopify-uitbetalingen; "Transfer" is geld tussen je eigen rekeningen.
+              Voor je cashflow (erin/eruit). Je kunt elke regel een categorie geven ("wegboeken"). Dit telt <b>niet</b> mee in je winst — je omzet komt uit Shopify. Markeer geld tussen je eigen rekeningen als <b>Transfer</b>.
             </p>
             <div className="table-wrap">
               <table className="table">
-                <thead><tr><th>Datum</th><th>Omschrijving</th><th>Type</th><th className="r">Bedrag</th></tr></thead>
+                <thead><tr><th>Datum</th><th>Omschrijving</th><th>Categorie</th><th className="r">Bedrag</th></tr></thead>
                 <tbody>
-                  {income.map((e: any, i: number) => (
-                    <tr key={e.id || i}>
-                      <td className="nowrap">{e.date ? ddmmyyyy(e.date) : "—"}</td>
-                      <td title={e.omschrijving}>{e.omschrijving}</td>
-                      <td><span className={`pill ${e.category === "Transfer" ? "pill-dim" : "pill-up"}`}>{e.category === "Transfer" ? "Transfer" : "Inkomsten"}</span></td>
-                      <td className="r mono strong green">+{eur(e.bedrag)}</td>
-                    </tr>
-                  ))}
+                  {income.map((e: any, i: number) => {
+                    const opts = ["Inkomsten", "Transfer", "Privé", ...(cats || []).filter((c: string) => !["Inkomsten", "Transfer", "Privé"].includes(c))];
+                    return (
+                      <tr key={e.id || i}>
+                        <td className="nowrap">{e.date ? ddmmyyyy(e.date) : "—"}</td>
+                        <td title={e.omschrijving}>{e.omschrijving}</td>
+                        <td>
+                          <select className="rowsel" value={e.category} onChange={(ev) => editIncome(e, ev.target.value)}>
+                            {opts.map((c: string) => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                        </td>
+                        <td className="r mono strong green">+{eur(e.bedrag)}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
