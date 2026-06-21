@@ -548,7 +548,7 @@ function VermogenPanel() {
         <div className="vrow" key={i}>
           <input className="vname" value={r.name} placeholder="naam" onChange={(e) => edit(which, i, "name", e.target.value)} onBlur={() => autosave()} />
           <input className="vamt mono" type="number" step="0.01" value={r.amount} placeholder="0,00" onChange={(e) => edit(which, i, "amount", e.target.value)} onBlur={() => autosave()} />
-          <button className="vdel" onClick={() => removeRow(which, i)} title="Verwijderen">\u00d7</button>
+          <button className="vdel" onClick={() => removeRow(which, i)} title="Verwijderen">×</button>
         </div>
       ))}
       <button className="vadd" onClick={() => addRow(which)}>+ regel</button>
@@ -557,13 +557,13 @@ function VermogenPanel() {
 
   return (
     <>
-      {!persisted && <div className="banner warn">Geen opslag actief \u2014 zet DATA_DIR + Railway Volume, anders wordt je vermogen niet bewaard.</div>}
+      {!persisted && <div className="banner warn">Geen opslag actief — zet DATA_DIR + Railway Volume, anders wordt je vermogen niet bewaard.</div>}
 
       <div className={`hero ${netT >= 0 ? "up" : "down"}`} style={{ marginBottom: 14, gridTemplateColumns: "1fr" }}>
         <div>
           <div className="hero-label">TOTAAL VERMOGEN · STAND PER {ddmmyyyy(date)}</div>
           <div className="hero-value">{netT >= 0 ? <TrendingUp size={30} /> : <TrendingDown size={30} />} {eur(netT)}</div>
-          <div className="hero-note">Zakelijk {eur(netZ)} · Privé {eur(netP)}.{saved ? " \u2713 opgeslagen" : dirty ? " · niet opgeslagen" : ""}</div>
+          <div className="hero-note">Zakelijk {eur(netZ)} · Privé {eur(netP)}.{saved ? " ✓ opgeslagen" : dirty ? " · niet opgeslagen" : ""}</div>
         </div>
       </div>
 
@@ -572,7 +572,7 @@ function VermogenPanel() {
           <span className="dim" style={{ fontSize: 13 }}>Stand per datum:</span>
           <input className="vdate" type="date" value={date} onChange={(e) => { setDate(e.target.value); setDirty(true); }} onBlur={() => autosave()} style={{ minWidth: 150 }} />
           <button className="bulkdel" style={{ background: "var(--accent)" }} onClick={saveSheet}>Opslaan</button>
-          {saved && <span className="green" style={{ fontSize: 13 }}>\u2713 vastgelegd op {ddmmyyyy(date)}</span>}
+          {saved && <span className="green" style={{ fontSize: 13 }}>✓ vastgelegd op {ddmmyyyy(date)}</span>}
         </div>
         <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>
           Vul je bezittingen en schulden in (wissel hieronder tussen <b>Zakelijk</b> en <b>Privé</b>), kies de datum, en klik op <b>Opslaan</b>. Elke keer dat je opslaat leg je een meetpunt vast. Tip: haal je winst naar privé? Dan zie je hier dat je zakelijk gelijk blijft maar je privé (en totaal) stijgt.
@@ -585,13 +585,13 @@ function VermogenPanel() {
       </div>
 
       <div className="grid2" style={{ marginTop: 10 }}>
-        <Card title={`Bezittingen \u00b7 ${scope === "zakelijk" ? "zakelijk" : "privé"}`} subtitle={eur(aTot)}>{rows("a")}</Card>
-        <Card title={`Schulden \u00b7 ${scope === "zakelijk" ? "zakelijk" : "privé"}`} subtitle={eur(lTot)}>{rows("l")}</Card>
+        <Card title={`Bezittingen · ${scope === "zakelijk" ? "zakelijk" : "privé"}`} subtitle={eur(aTot)}>{rows("a")}</Card>
+        <Card title={`Schulden · ${scope === "zakelijk" ? "zakelijk" : "privé"}`} subtitle={eur(lTot)}>{rows("l")}</Card>
       </div>
 
       <div className="ctrls" style={{ marginTop: 14, justifyContent: "flex-end" }}>
         <button className="bulkdel" style={{ background: "var(--accent)" }} onClick={saveSheet}>Opslaan (stand per {ddmmyyyy(date)})</button>
-        {saved && <span className="green" style={{ fontSize: 13 }}>\u2713 opgeslagen</span>}
+        {saved && <span className="green" style={{ fontSize: 13 }}>✓ opgeslagen</span>}
       </div>
 
       {snaps.length > 0 && (
@@ -625,8 +625,8 @@ function VermogenPanel() {
                       <td className="r mono">{eur(s.net)}</td>
                       <td className="r mono">{eur(s.netPrive ?? 0)}</td>
                       <td className="r mono strong">{eur(tot)}</td>
-                      <td className={`r mono ${delta == null ? "dim" : delta >= 0 ? "green" : "red"}`}>{delta == null ? "\u2014" : `${delta >= 0 ? "\u25B2" : "\u25BC"} ${eur(Math.abs(delta))}`}</td>
-                      <td className="r"><button className="vdel" onClick={() => delSnap(s.date)} title="Meetpunt verwijderen">\u00d7</button></td>
+                      <td className={`r mono ${delta == null ? "dim" : delta >= 0 ? "green" : "red"}`}>{delta == null ? "—" : `${delta >= 0 ? "▲" : "▼"} ${eur(Math.abs(delta))}`}</td>
+                      <td className="r"><button className="vdel" onClick={() => delSnap(s.date)} title="Meetpunt verwijderen">×</button></td>
                     </tr>
                   );
                 })}

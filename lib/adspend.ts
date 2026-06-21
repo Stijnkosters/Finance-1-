@@ -12,7 +12,34 @@ function normalizeDate(s: string): string | null {
   return null;
 }
 
-// Route B: gepubliceerde Google Sheet als CSV. Verwacht kolommen 'date' en 'cost' (of datum/kosten).
+function splitCsvLine(line: string): string[] {
+  const out: string[] = []; let cur = ""; let q = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') { if (q && line[i + 1] === '"') { cur += '"'; i++; } else q = !q; }
+    else if (ch === "," && !q) { out.push(cur); cur = ""; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
+
+function parseNum(s: string): number {
+  let t = (s || "").replace(/["€$\s]/g, "").trim();
+  if (!t) return NaN;
+  const hasDot = t.includes("."), hasComma = t.includes(",");
+  if (hasDot && hasComma) {
+    // laatste scheidingsteken = decimaal; de andere is duizendtal
+    if (t.lastIndexOf(",") > t.lastIndexOf(".")) t = t.replace(/\./g, "").replace(",", ".");
+    else t = t.replace(/,/g, "");
+  } else if (hasComma) {
+    t = t.replace(",", "."); // EU decimaal
+  }
+  return parseFloat(t);
+}
+
+// Route B: gepubliceerde Google Sheet als CSV. Verwacht kolommen 'date'/'day' en 'cost'/'kosten'.
+// Robuust voor de Google Ads-add-on die metadata-regels bovenaan zet vóór de echte koprij.
 async function fetchFromSheet(): Promise<Record<string, number>> {
   if (!SHEET_CSV_URL) return {};
   const res = await fetch(SHEET_CSV_URL, { cache: "no-store" });
@@ -20,16 +47,28 @@ async function fetchFromSheet(): Promise<Record<string, number>> {
   const text = await res.text();
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
   if (!lines.length) return {};
-  const header = lines[0].split(",").map((h) => h.trim().toLowerCase().replace(/"/g, ""));
-  let di = header.findIndex((h) => /date|datum|day/.test(h));
-  let ci = header.findIndex((h) => /cost|spend|kosten|bedrag/.test(h));
-  let start = 1;
-  if (di === -1 || ci === -1) { di = 0; ci = 1; start = normalizeDate(header[0]) ? 0 : 1; }
+
+  // zoek de koprij: eerste regel met zowel een datum- als een kosten-kolom
+  let headerIdx = -1, di = -1, ci = -1;
+  for (let i = 0; i < Math.min(lines.length, 15); i++) {
+    const h = splitCsvLine(lines[i]).map((x) => x.trim().toLowerCase().replace(/"/g, ""));
+    const d = h.findIndex((x) => /^date$|datum|^day$/.test(x));
+    const c = h.findIndex((x) => /cost|spend|kosten|bedrag/.test(x));
+    if (d !== -1 && c !== -1) { headerIdx = i; di = d; ci = c; break; }
+  }
+  let start: number;
+  if (headerIdx !== -1) { start = headerIdx + 1; }
+  else {
+    // geen koprij gevonden: zoek de eerste regel die als datum,bedrag leest
+    di = 0; ci = 1; start = 0;
+    while (start < lines.length && !normalizeDate(splitCsvLine(lines[start])[0])) start++;
+  }
+
   const map: Record<string, number> = {};
   for (let i = start; i < lines.length; i++) {
-    const cols = lines[i].split(",");
+    const cols = splitCsvLine(lines[i]);
     const date = normalizeDate(cols[di]);
-    const cost = parseFloat((cols[ci] || "").replace(/["€\s]/g, "").replace(",", "."));
+    const cost = parseNum(cols[ci]);
     if (date && !isNaN(cost)) map[date] = (map[date] || 0) + cost;
   }
   return map;
