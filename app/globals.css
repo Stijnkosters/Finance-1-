@@ -179,3 +179,7 @@ tr.selrow{background:var(--accent-soft)}
 .shopbar { display:flex; align-items:center; gap:14px; padding:10px 22px 0; flex-wrap:wrap; }
 .shopseg button { min-width:84px; }
 .shopnote { font-size:12px; color:var(--muted, #8A909C); }
+
+/* Zoekbalk uitgaves */
+.expsearch { min-width:220px; }
+.clrbtn { border:none; background:transparent; font-size:18px; line-height:1; cursor:pointer; color:var(--muted,#8A909C); padding:0 4px; }
