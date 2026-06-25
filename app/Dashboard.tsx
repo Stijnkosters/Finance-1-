@@ -519,7 +519,7 @@ export default function Dashboard() {
 
         {tab === "balans" && <VermogenPanel />}
 
-        {tab === "import" && <ImportPanel onDone={load} onReload={reloadData} cats={(data.categories && data.categories.length) ? data.categories : FALLBACK_CATEGORIES} />}
+        {tab === "import" && <ImportPanel onDone={load} onReload={reloadData} cats={(data.categories && data.categories.length) ? data.categories : FALLBACK_CATEGORIES} expenses={data.expenses || []} />}
       </main>
     </div>
   );
@@ -692,7 +692,7 @@ function VermogenPanel() {
   );
 }
 
-function ImportPanel({ onDone, onReload, cats }: any) {
+function ImportPanel({ onDone, onReload, cats, expenses }: any) {
   const [busy, setBusy] = useState(false);
   const [res, setRes] = useState<any>(null);
   const [pending, setPending] = useState<any[]>([]);
@@ -837,37 +837,76 @@ function ImportPanel({ onDone, onReload, cats }: any) {
 
   return (
     <>
-      <Card title="Automatische koppelingen" subtitle="haal saldo + transacties op zonder CSV">
-        <p className="muted" style={{ marginTop: 0 }}>
-          Koppel je rekeningen één keer; daarna haalt de app saldo én transacties automatisch op. Transacties komen in dezelfde wachtrij als je CSV's (met dedup, dus dubbel importeren kan geen kwaad).
-        </p>
+      <Card title="Maand-checklist" subtitle="welke CSV's heb je per maand al aangeleverd">
+        {(() => {
+          const exps = expenses || [];
+          // maanden vanaf januari 2026 t/m de vorige (afgeronde) maand
+          const months: { val: string; label: string }[] = [];
+          const cur = new Date();
+          const firstOfCurrent = new Date(cur.getFullYear(), cur.getMonth(), 1);
+          let d = new Date(2026, 0, 1);
+          while (d < firstOfCurrent) {
+            months.push({
+              val: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+              label: d.toLocaleDateString("nl-NL", { month: "long", year: "numeric" }),
+            });
+            d.setMonth(d.getMonth() + 1);
+          }
+          // providers = de methodes die in je data voorkomen (jouw echte rekeningen)
+          let providers = Array.from(new Set(exps.map((e: any) => e.methode).filter(Boolean))).sort() as string[];
+          if (!providers.length) providers = ["Rabobank", "American Express", "PayPal"];
 
-        <div className="vrow" style={{ alignItems: "center", marginBottom: 10 }}>
-          <b style={{ width: 90 }}>PayPal</b>
-          <button className="vadd" onClick={syncPaypal} disabled={ppBusy}>{ppBusy ? "Bezig…" : "↻ PayPal synchroniseren"}</button>
-          {ppMsg && <span className="dim" style={{ fontSize: 13 }}>{ppMsg}</span>}
-        </div>
+          const count = (mv: string, prov: string) =>
+            exps.filter((e: any) => e.methode === prov && (e.date || "").startsWith(mv)).length;
 
-        <div style={{ borderTop: "1px solid var(--line)", paddingTop: 10 }}>
-          <div className="ctrls" style={{ flexWrap: "wrap" }}>
-            <b style={{ width: 90 }}>Banken</b>
-            <button className="vadd" onClick={loadBanks} disabled={bankBusy}>Bank koppelen</button>
-            {institutions.length > 0 && (
-              <>
-                <select className="msel" value={chosenInst} onChange={(e) => setChosenInst(e.target.value)}>
-                  <option value="">— kies bank —</option>
-                  {institutions.map((i: any) => <option key={i.id} value={i.id}>{i.name}</option>)}
-                </select>
-                <button className="vadd" onClick={connectBank} disabled={bankBusy || !chosenInst}>Koppel →</button>
-              </>
-            )}
-            <button className="vadd" onClick={syncBanks} disabled={bankBusy}>{bankBusy ? "Bezig…" : "↻ Synchroniseer banken"}</button>
-          </div>
-          {connected.length > 0 && (
-            <div className="dim" style={{ fontSize: 13, marginTop: 6 }}>Gekoppeld: {connected.map((c: any) => c.name).join(", ")}</div>
-          )}
-          {bankMsg && <div className="banner info" style={{ marginTop: 8 }}>{bankMsg}</div>}
-        </div>
+          const missing: string[] = [];
+          months.forEach((mo) => providers.forEach((p) => { if (count(mo.val, p) === 0) missing.push(`${mo.label} · ${p}`); }));
+
+          if (!months.length) return <p className="muted" style={{ marginTop: 0 }}>Nog geen afgeronde maand sinds januari 2026.</p>;
+
+          return (
+            <>
+              <p className="muted" style={{ marginTop: 0 }}>
+                Per maand zie je welke providers al binnen zijn (✓ met aantal) en welke je nog moet aanleveren (—).
+                Gebaseerd op de transacties die je al hebt geïmporteerd.
+              </p>
+              {missing.length > 0 ? (
+                <div className="banner warn" style={{ marginBottom: 12 }}>
+                  <b>Nog aanleveren:</b> {missing.join("  ·  ")}
+                </div>
+              ) : (
+                <div className="banner ok" style={{ marginBottom: 12 }}>Alles compleet t/m vorige maand. 🎉</div>
+              )}
+              <div style={{ overflowX: "auto" }}>
+                <table className="table cov">
+                  <thead>
+                    <tr>
+                      <th>Maand</th>
+                      {providers.map((p) => <th key={p} className="center">{p}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {months.map((mo) => (
+                      <tr key={mo.val}>
+                        <td className="nowrap strong" style={{ textTransform: "capitalize" }}>{mo.label}</td>
+                        {providers.map((p) => {
+                          const n = count(mo.val, p);
+                          return (
+                            <td key={p} className="center">
+                              {n > 0
+                                ? <span className="covok">✓ <span className="dim">{n}</span></span>
+                                : <span className="covmiss">—</span>}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          );
+        })()}
       </Card>
 
       <Card title="Bankafschrift importeren" subtitle="bank · creditcard · PayPal">

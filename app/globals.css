@@ -183,3 +183,9 @@ tr.selrow{background:var(--accent-soft)}
 /* Zoekbalk uitgaves */
 .expsearch { min-width:220px; }
 .clrbtn { border:none; background:transparent; font-size:18px; line-height:1; cursor:pointer; color:var(--muted,#8A909C); padding:0 4px; }
+
+/* Maand-checklist */
+.cov th, .cov td { padding:8px 12px; }
+.cov .center { text-align:center; }
+.covok { color:var(--up,#0E8A52); font-weight:600; }
+.covmiss { color:var(--down,#CE2C2C); font-weight:700; }
