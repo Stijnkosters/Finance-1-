@@ -46,6 +46,7 @@ body{font-family:'Inter',system-ui,sans-serif;color:var(--ink);background:var(--
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}
 .kpi{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:14px 15px}
 .kpi-label{font-size:12px;color:var(--soft);font-weight:500;margin-bottom:7px}
+.kpi-sub{font-size:11px;color:var(--soft);margin-top:4px}
 .kpi-value{font-size:20px;font-weight:600;letter-spacing:-.02em}
 .kpi-hint{font-size:11px;color:var(--soft);margin-top:3px}
 .kpi.up .kpi-value{color:var(--up)} .kpi.down .kpi-value{color:var(--down)}

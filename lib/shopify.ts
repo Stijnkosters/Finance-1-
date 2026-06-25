@@ -32,6 +32,7 @@ query Orders($cursor: String, $q: String) {
       id
       name
       createdAt
+      customer { id }
       subtotalPriceSet { shopMoney { amount } }
       totalPriceSet { shopMoney { amount } }
       totalRefundedSet { shopMoney { amount } }

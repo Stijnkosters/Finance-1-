@@ -316,7 +316,32 @@ export default function Dashboard() {
                   <Kpi label="P&L winst" value={eur(totals.totalProfit || 0)} tone={(totals.totalProfit || 0) >= 0 ? "up" : "down"} />
                   <Kpi label="Netto na overhead" value={eur(netTotal)} tone={netTotal >= 0 ? "up" : "down"} />
                   <Kpi label="Orders / units" value={`${totals.orders || 0} / ${totals.units || 0}`} />
+                  <Kpi label="AOV (gem. orderwaarde)" value={eur(totals.aov || 0)} sub={`${numf(totals.maxCpa || 0, 2)} max CPA`} />
+                  <Kpi label="Winst / order" value={eur(totals.profitPerOrder || 0)} tone={(totals.profitPerOrder || 0) >= 0 ? "up" : "down"} sub={`${eur(totals.cacPerOrder || 0)} ad/order`} />
+                  <Kpi
+                    label="ROAS (deze periode)"
+                    value={(totals.adspend || 0) > 0 ? `${numf(totals.roas || 0, 2)}×` : "—"}
+                    tone={(totals.adspend || 0) > 0 ? ((totals.roas || 0) >= (totals.breakevenRoas || 0) ? "up" : "down") : undefined}
+                    sub={(totals.breakevenRoas || 0) > 0 ? `break-even ${numf(totals.breakevenRoas, 2)}×` : undefined}
+                  />
+                  <Kpi
+                    label="Break-even ROAS"
+                    value={(totals.breakevenRoas || 0) > 0 ? `${numf(totals.breakevenRoas, 2)}×` : "—"}
+                    sub={(totals.marginPct || 0) > 0 ? `marge ${numf(totals.marginPct, 1)}%` : undefined}
+                  />
                 </div>
+
+                <Card title="Klantwaarde (LTV)" subtitle={`over ${ddmmyyyy(pl.range.from)} – ${ddmmyyyy(pl.range.to)}`}>
+                  <div className="kpis">
+                    <Kpi label="LTV (winst per klant)" value={eur(totals.ltv || 0)} tone="up" sub={`${eur(totals.revenuePerCustomer || 0)} omzet/klant`} />
+                    <Kpi label="Unieke klanten" value={`${totals.uniqueCustomers || 0}`} />
+                    <Kpi label="Herhaalaankopen" value={`${numf(totals.repeatRate || 0, 1)}%`} sub={`${numf(totals.ordersPerCustomer || 0, 2)} orders/klant`} />
+                    <Kpi label="Refund-ratio" value={`${numf(totals.refundRate || 0, 1)}%`} tone={(totals.refundRate || 0) > 5 ? "down" : undefined} />
+                  </div>
+                  <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>
+                    LTV = gemiddelde winst (dekkingsbijdrage) per klant in deze periode. Voor een échte LTV kies je een langere periode (bijv. 90d of een heel jaar) — dan zie je hoeveel klanten terugkomen. Komt LTV ruim boven je CAC ({eur(totals.cacPerOrder || 0)}/order)? Dan kun je meer voor klanten betalen en agressiever schalen.
+                  </p>
+                </Card>
 
                 <div className="grid2">
                   <Card title="Waar gaat je geld heen">
@@ -1001,11 +1026,12 @@ function ExpenseRow({ e, cats, show, sel, onSel, onCat, onNote, onLabel, onAppro
   );
 }
 
-function Kpi({ label, value, tone }: any) {
+function Kpi({ label, value, tone, sub }: any) {
   return (
     <div className={`kpi ${tone || ""}`}>
       <div className="kpi-label">{label}</div>
       <div className="kpi-value mono">{value}</div>
+      {sub && <div className="kpi-sub">{sub}</div>}
     </div>
   );
 }

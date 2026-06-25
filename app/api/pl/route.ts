@@ -52,14 +52,22 @@ export async function GET(req: Request) {
 
     const byDay: Record<string, any> = {};
     let unmatched: Record<string, { title: string; units: number }> = {};
+    const custStats: Record<string, { orders: number; revenue: number }> = {};
 
     for (const o of orders) {
       const day = dayKeyAmsterdam(o.createdAt);
       if (!byDay[day]) byDay[day] = { date: day, orders: 0, units: 0, revenue: 0, refunds: 0, cogs: 0 };
       const bucket = byDay[day];
       bucket.orders += 1;
-      bucket.revenue += parseFloat(o.totalPriceSet?.shopMoney?.amount || o.subtotalPriceSet?.shopMoney?.amount || "0");
+      const orderRev = parseFloat(o.totalPriceSet?.shopMoney?.amount || o.subtotalPriceSet?.shopMoney?.amount || "0");
+      bucket.revenue += orderRev;
       bucket.refunds += parseFloat(o.totalRefundedSet?.shopMoney?.amount || "0");
+
+      // klant bijhouden voor LTV / herhaalaankopen (gasten = uniek per order)
+      const custId = o.customer?.id || `guest:${o.id}`;
+      if (!custStats[custId]) custStats[custId] = { orders: 0, revenue: 0 };
+      custStats[custId].orders += 1;
+      custStats[custId].revenue += orderRev;
 
       // Match deze Shopify-order op NicheBay-kostprijs (ordernummer of order-ID)
       const orderNo = String(o.name || "").replace(/^#/, "").trim();
@@ -116,6 +124,34 @@ export async function GET(req: Request) {
       { orders: 0, units: 0, revenue: 0, refunds: 0, cogs: 0, fees: 0, adspend: 0, totalProfit: 0 }
     );
     Object.keys(totals).forEach((k) => (totals[k] = round(totals[k])));
+
+    // ROAS van de periode + break-even ROAS (de ROAS die je minimaal nodig hebt om quitte te spelen)
+    // dekkingsbijdrage vóór advertentiekosten = omzet − COGS − Shopify fees − refunds
+    const contrib = totals.revenue - totals.cogs - totals.fees - totals.refunds;
+    totals.contributionMargin = round(contrib);
+    totals.marginPct = totals.revenue > 0 ? round((contrib / totals.revenue) * 100) : 0;
+    totals.roas = totals.adspend > 0 ? round(totals.revenue / totals.adspend) : 0;
+    totals.breakevenRoas = contrib > 0 ? round(totals.revenue / contrib) : 0;
+
+    // per-order metrics
+    const O = totals.orders || 0;
+    totals.aov = O > 0 ? round(totals.revenue / O) : 0;                 // gemiddelde orderwaarde
+    totals.profitPerOrder = O > 0 ? round(totals.totalProfit / O) : 0;   // P&L-winst per order
+    totals.cacPerOrder = O > 0 ? round(totals.adspend / O) : 0;          // ad-kosten per order (blended)
+    totals.maxCpa = O > 0 ? round(contrib / O) : 0;                      // break-even CPA: max die je per order mag betalen
+    totals.refundRate = totals.revenue > 0 ? round((totals.refunds / totals.revenue) * 100) : 0;
+
+    // klantwaarde / LTV (over de gekozen periode)
+    const custIds = Object.keys(custStats);
+    const uniqueCustomers = custIds.length;
+    const repeatCustomers = custIds.filter((k) => custStats[k].orders > 1).length;
+    totals.uniqueCustomers = uniqueCustomers;
+    totals.repeatRate = uniqueCustomers > 0 ? round((repeatCustomers / uniqueCustomers) * 100) : 0;
+    totals.ordersPerCustomer = uniqueCustomers > 0 ? round(O / uniqueCustomers) : 0;
+    totals.revenuePerCustomer = uniqueCustomers > 0 ? round(totals.revenue / uniqueCustomers) : 0;
+    // LTV (simpel): gemiddelde dekkingsbijdrage per klant = omzet/klant × marge
+    const marginRatio = totals.revenue > 0 ? contrib / totals.revenue : 0;
+    totals.ltv = uniqueCustomers > 0 ? round((totals.revenue / uniqueCustomers) * marginRatio) : 0;
 
     const missingCosts = Object.entries(costs)
       .filter(([, c]) => !c.cost)
