@@ -66,6 +66,7 @@ export default function Dashboard() {
   const [monthSel, setMonthSel] = useState("");
   const [expMonth, setExpMonth] = useState("");
   const [expSearch, setExpSearch] = useState("");
+  const [expMethod, setExpMethod] = useState("");
   const [hiddenCols, setHiddenCols] = useState<string[]>([]);
   useEffect(() => { try { const s = localStorage.getItem("dmx_hiddencols"); if (s) setHiddenCols(JSON.parse(s)); } catch {} }, []);
   const toggleCol = (k: string) => setHiddenCols((h) => {
@@ -261,6 +262,12 @@ export default function Dashboard() {
                 onChange={(e) => setExpSearch(e.target.value)}
               />
               {expSearch && <button className="clrbtn" onClick={() => setExpSearch("")}>×</button>}
+              <select className="msel" value={expMethod} onChange={(e) => setExpMethod(e.target.value)}>
+                <option value="">Alle methodes</option>
+                {(Array.from(new Set((data.expenses || []).map((e: any) => e.methode).filter(Boolean))).sort() as string[]).map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
               <select className="msel" value={expMonth} onChange={(e) => setExpMonth(e.target.value)}>
                 <option value="">Alle maanden</option>
                 {MONTHS.map((m) => <option key={m.val} value={m.val}>{m.label}</option>)}
@@ -474,6 +481,7 @@ export default function Dashboard() {
               const q = expSearch.trim().toLowerCase();
               const rows = [...(data.expenses || [])]
                 .filter((e: any) => !expMonth || (e.date || "").startsWith(expMonth))
+                .filter((e: any) => !expMethod || e.methode === expMethod)
                 .filter((e: any) => !q || [e.label, e.raw, e.category, e.methode, e.note]
                   .some((f: any) => String(f || "").toLowerCase().includes(q)))
                 .sort((a: any, b: any) => (b.date || "").localeCompare(a.date || ""));
