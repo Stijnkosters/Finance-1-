@@ -174,3 +174,8 @@ tr.selrow{background:var(--accent-soft)}
 .red{color:var(--down)}
 
 .vdate{width:130px;border:1px solid var(--line);border-radius:8px;padding:7px 8px;font-size:13px;color:var(--ink);background:#fff;font-family:inherit}
+
+/* Shop-kiezer */
+.shopbar { display:flex; align-items:center; gap:14px; padding:10px 22px 0; flex-wrap:wrap; }
+.shopseg button { min-width:84px; }
+.shopnote { font-size:12px; color:var(--muted, #8A909C); }

@@ -1,16 +1,19 @@
-const STORE = process.env.SHOPIFY_STORE_DOMAIN;
-const TOKEN = process.env.SHOPIFY_ADMIN_TOKEN;
-const VERSION = process.env.SHOPIFY_API_VERSION || "2026-01";
+type ShopifyCfg = { store?: string; token?: string; version?: string };
 
-export async function shopifyGraphQL(query: string, variables: any = {}) {
-  if (!STORE || !TOKEN) {
-    throw new Error("Ontbrekende env vars: SHOPIFY_STORE_DOMAIN en/of SHOPIFY_ADMIN_TOKEN");
+const DEFAULT_VERSION = process.env.SHOPIFY_API_VERSION || "2026-01";
+
+export async function shopifyGraphQL(query: string, variables: any = {}, cfg?: ShopifyCfg) {
+  const store = cfg?.store ?? process.env.SHOPIFY_STORE_DOMAIN;
+  const token = cfg?.token ?? process.env.SHOPIFY_ADMIN_TOKEN;
+  const version = cfg?.version ?? DEFAULT_VERSION;
+  if (!store || !token) {
+    throw new Error("Ontbrekende Shopify-credentials (store-domein en/of admin-token) voor deze shop.");
   }
-  const res = await fetch(`https://${STORE}/admin/api/${VERSION}/graphql.json`, {
+  const res = await fetch(`https://${store}/admin/api/${version}/graphql.json`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-Shopify-Access-Token": TOKEN,
+      "X-Shopify-Access-Token": token,
     },
     body: JSON.stringify({ query, variables }),
     cache: "no-store",
@@ -47,13 +50,12 @@ query Orders($cursor: String, $q: String) {
   }
 }`;
 
-export async function fetchOrders(from: string, to: string) {
-  // from/to: YYYY-MM-DD (inclusief). Shopify query op created_at.
+export async function fetchOrders(from: string, to: string, cfg?: ShopifyCfg) {
   const q = `created_at:>='${from}T00:00:00Z' created_at:<='${to}T23:59:59Z'`;
   let cursor: string | null = null;
   const out: any[] = [];
   for (let i = 0; i < 50; i++) {
-    const data = await shopifyGraphQL(ORDERS_QUERY, { cursor, q });
+    const data = await shopifyGraphQL(ORDERS_QUERY, { cursor, q }, cfg);
     const conn = data.orders;
     out.push(...conn.nodes);
     if (!conn.pageInfo.hasNextPage) break;

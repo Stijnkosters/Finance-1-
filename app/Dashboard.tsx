@@ -60,6 +60,7 @@ const LOCKED_COLS = new Set(EXP_COLS.filter(([, , lock]) => lock).map(([k]) => k
 export default function Dashboard() {
   const [tab, setTab] = useState("overzicht");
   const [period, setPeriod] = useState("dezemaand");
+  const [shop, setShop] = useState("drivemax");
   const [fromInput, setFromInput] = useState("");
   const [toInput, setToInput] = useState("");
   const [monthSel, setMonthSel] = useState("");
@@ -98,7 +99,7 @@ export default function Dashboard() {
     try {
       const { from, to } = getRange();
       const [r1, r2] = await Promise.all([
-        fetch(`/api/pl?from=${from}&to=${to}`).then((r) => r.json()),
+        fetch(`/api/pl?from=${from}&to=${to}&shop=${shop}`).then((r) => r.json()),
         fetch(`/api/data`).then((r) => r.json()),
       ]);
       if (!r1.ok) throw new Error(r1.error || "P&L ophalen mislukt");
@@ -107,7 +108,7 @@ export default function Dashboard() {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [period, fromInput, toInput]);
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [period, fromInput, toInput, shop]);
 
   const reloadData = async () => {
     try { const r = await fetch(`/api/data`).then((x) => x.json()); setData(r); } catch {}
@@ -146,10 +147,10 @@ export default function Dashboard() {
 
   const NON_COST = ["Transfer", "Privé", "Refund"];
   const expensesInRange = useMemo(() => {
-    if (!pl) return [];
+    if (!pl || shop !== "totaal") return [];
     const { from, to } = pl.range;
     return (data.expenses || []).filter((e: any) => e.date >= from && e.date <= to && !NON_COST.includes(e.category));
-  }, [data, pl]);
+  }, [data, pl, shop]);
   const overhead = expensesInRange.reduce((a: number, e: any) => a + (e.bedrag || 0), 0);
 
   const timeline = useMemo(() => {
@@ -220,6 +221,15 @@ export default function Dashboard() {
           </button>
         ))}
       </nav>
+
+      <div className="shopbar">
+        <div className="seg shopseg">
+          {[["drivemax", "Drivemax"], ["homivo", "Homivo"], ["totaal", "Totaal"]].map(([v, l]) => (
+            <button key={v} className={shop === v ? "on" : ""} onClick={() => setShop(v)}>{l}</button>
+          ))}
+        </div>
+        <span className="shopnote">{shop === "totaal" ? "Alle shops + overhead (bank)" : "Per shop · exclusief overhead"}</span>
+      </div>
 
       <main className="main">
         <div className="row-between">

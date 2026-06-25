@@ -76,7 +76,19 @@ async function fetchFromSheet(url: string | undefined): Promise<Record<string, n
   return map;
 }
 
-export async function resolveAdSpend(from: string, to: string) {
+export type AdSpendOpts = {
+  googleSheetUrl?: string;
+  bingSheetUrl?: string;
+  bingCacheFile?: string;
+  useGoogleApi?: boolean;
+};
+
+export async function resolveAdSpend(from: string, to: string, opts?: AdSpendOpts) {
+  const googleSheetUrl = opts ? opts.googleSheetUrl : SHEET_CSV_URL;
+  const bingSheetUrl = opts ? opts.bingSheetUrl : BING_SHEET_CSV_URL;
+  const bingCacheFile = opts?.bingCacheFile ?? "bingspend.json";
+  const useGoogleApi = opts ? !!opts.useGoogleApi : true;
+
   const total: Record<string, number> = {};
   const breakdown = { google: 0, bing: 0, manual: 0 };
   const sources: string[] = [];
@@ -88,18 +100,20 @@ export async function resolveAdSpend(from: string, to: string) {
     return Math.round(s * 100) / 100;
   };
 
-  // handmatige baseline (data/adspend.json) — normaal leeg, dient als fallback
-  breakdown.manual = addMap(manual);
-  if (breakdown.manual > 0) sources.push("handmatig");
+  // handmatige baseline (data/adspend.json) — alleen voor de standaard-shop, normaal leeg
+  if (!opts) {
+    breakdown.manual = addMap(manual);
+    if (breakdown.manual > 0) sources.push("handmatig");
+  }
 
-  // Google: API heeft voorrang, anders de Google-sheet
+  // Google: API (alleen standaard-shop) heeft voorrang, anders de Google-sheet
   let googleMap: Record<string, number> = {};
-  if (googleAdsConfigured()) {
+  if (useGoogleApi && googleAdsConfigured()) {
     try { googleMap = await fetchAdSpendByDay(from, to); if (Object.keys(googleMap).length) sources.push("Google Ads"); }
     catch (e: any) { warning = `Google Ads API faalde (${e.message}).`; }
   }
-  if (!Object.keys(googleMap).length && SHEET_CSV_URL) {
-    try { googleMap = await fetchFromSheet(SHEET_CSV_URL); if (Object.keys(googleMap).length) sources.push("Google (Sheet)"); }
+  if (!Object.keys(googleMap).length && googleSheetUrl) {
+    try { googleMap = await fetchFromSheet(googleSheetUrl); if (Object.keys(googleMap).length) sources.push("Google (Sheet)"); }
     catch (e: any) { warning = (warning ? warning + " " : "") + `Google-sheet faalde (${e.message}).`; }
   }
   breakdown.google = addMap(googleMap);
@@ -107,7 +121,7 @@ export async function resolveAdSpend(from: string, to: string) {
   // Bing / Microsoft Advertising — eerst de API-cache (snel), anders sheet
   let bingDone = false;
   try {
-    const cache: any = await readJson("bingspend.json", null);
+    const cache: any = await readJson(bingCacheFile, null);
     if (cache && cache.map) {
       const inRange: Record<string, number> = {};
       for (const [d, v] of Object.entries(cache.map as Record<string, number>)) {
@@ -119,8 +133,8 @@ export async function resolveAdSpend(from: string, to: string) {
   } catch (e: any) {
     warning = (warning ? warning + " " : "") + `Bing-cache lezen faalde (${e.message}).`;
   }
-  if (!bingDone && BING_SHEET_CSV_URL) {
-    try { const b = await fetchFromSheet(BING_SHEET_CSV_URL); breakdown.bing = addMap(b); if (Object.keys(b).length) sources.push("Bing (Sheet)"); }
+  if (!bingDone && bingSheetUrl) {
+    try { const b = await fetchFromSheet(bingSheetUrl); breakdown.bing = addMap(b); if (Object.keys(b).length) sources.push("Bing (Sheet)"); }
     catch (e: any) { warning = (warning ? warning + " " : "") + `Bing-sheet faalde (${e.message}).`; }
   }
 
