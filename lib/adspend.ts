@@ -1,4 +1,5 @@
 import { googleAdsConfigured, fetchAdSpendByDay } from "@/lib/googleAds";
+import { readJson } from "@/lib/store";
 import adspendData from "@/data/adspend.json";
 
 const SHEET_CSV_URL = process.env.GOOGLE_SHEET_CSV_URL;
@@ -103,8 +104,22 @@ export async function resolveAdSpend(from: string, to: string) {
   }
   breakdown.google = addMap(googleMap);
 
-  // Bing / Microsoft Advertising via sheet
-  if (BING_SHEET_CSV_URL) {
+  // Bing / Microsoft Advertising — eerst de API-cache (snel), anders sheet
+  let bingDone = false;
+  try {
+    const cache: any = await readJson("bingspend.json", null);
+    if (cache && cache.map) {
+      const inRange: Record<string, number> = {};
+      for (const [d, v] of Object.entries(cache.map as Record<string, number>)) {
+        if (d >= from && d <= to) inRange[d] = v;
+      }
+      breakdown.bing = addMap(inRange);
+      if (Object.keys(inRange).length) { sources.push("Bing (API)"); bingDone = true; }
+    }
+  } catch (e: any) {
+    warning = (warning ? warning + " " : "") + `Bing-cache lezen faalde (${e.message}).`;
+  }
+  if (!bingDone && BING_SHEET_CSV_URL) {
     try { const b = await fetchFromSheet(BING_SHEET_CSV_URL); breakdown.bing = addMap(b); if (Object.keys(b).length) sources.push("Bing (Sheet)"); }
     catch (e: any) { warning = (warning ? warning + " " : "") + `Bing-sheet faalde (${e.message}).`; }
   }
