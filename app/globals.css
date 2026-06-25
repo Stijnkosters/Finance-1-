@@ -189,3 +189,9 @@ tr.selrow{background:var(--accent-soft)}
 .cov .center { text-align:center; }
 .covok { color:var(--up,#0E8A52); font-weight:600; }
 .covmiss { color:var(--down,#CE2C2C); font-weight:700; }
+
+/* Uitgesloten regels (tellen niet mee als overhead) */
+tr.excl td { background: rgba(206,44,44,0.05); }
+tr.excl .rowdesc, tr.excl .mono { color: var(--down,#CE2C2C); }
+.rowsel.selexcl { color: var(--down,#CE2C2C); border-color: rgba(206,44,44,0.4); }
+.excltag { display:inline-block; margin-left:8px; font-size:11px; font-weight:700; color:var(--down,#CE2C2C); text-transform:uppercase; letter-spacing:0.03em; }

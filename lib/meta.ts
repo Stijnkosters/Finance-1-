@@ -9,7 +9,7 @@ export const CATEGORIES = [
 ];
 
 // Categorieën die NIET als kost meetellen (overboekingen + klant-refunds die Shopify al verrekent).
-export const NON_COST = ["Transfer", "Refund"];
+export const NON_COST = ["Transfer", "Refund", "Marketing"];
 
 export function expenseId(e: any): string {
   const base = `${e.date}|${Number(e.bedrag).toFixed(2)}|${e.methode || ""}|${(e.omschrijving || "").slice(0, 40)}`;

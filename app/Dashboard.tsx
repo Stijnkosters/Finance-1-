@@ -51,6 +51,7 @@ function lastMonths(n: number) {
   return out;
 }
 const MONTHS = lastMonths(12);
+const EXCLUDED_CATS = ["Transfer", "Refund", "Marketing"];
 const EXP_COLS: [string, string, boolean][] = [
   ["date", "Datum", true], ["omschrijving", "Omschrijving", true], ["category", "Categorie", true],
   ["note", "Notitie", false], ["methode", "Methode", false], ["bedrag", "Bedrag", false],
@@ -147,7 +148,7 @@ export default function Dashboard() {
   const days = pl?.days || [];
   const totals = pl?.totals || {};
 
-  const NON_COST = ["Transfer", "Refund"];
+  const NON_COST = EXCLUDED_CATS;
   const expensesInRange = useMemo(() => {
     if (!pl || shop !== "totaal") return [];
     const { from, to } = pl.range;
@@ -1078,8 +1079,9 @@ function ExpenseRow({ e, cats, show, sel, onSel, onCat, onNote, onLabel, onAppro
   useEffect(() => { setNote(e.note || ""); }, [e.note, e.id]);
   useEffect(() => { setLabel(e.label || ""); }, [e.label, e.id]);
   const options: string[] = cats.includes(e.category) ? cats : [e.category, ...cats];
+  const excluded = EXCLUDED_CATS.includes(e.category);
   return (
-    <tr className={`${e.edited ? "edited" : ""} ${sel ? "selrow" : ""}`}>
+    <tr className={`${e.edited ? "edited" : ""} ${sel ? "selrow" : ""} ${excluded ? "excl" : ""}`}>
       {selectable && <td className="selcol"><input type="checkbox" checked={!!sel} onChange={onSel} /></td>}
       {show("date") && <td className="nowrap">{e.date ? ddmmyyyy(e.date) : "—"}</td>}
       {show("omschrijving") && (
@@ -1092,9 +1094,10 @@ function ExpenseRow({ e, cats, show, sel, onSel, onCat, onNote, onLabel, onAppro
       )}
       {show("category") && (
         <td>
-          <select className="rowsel" value={e.category} onChange={(ev) => onCat(e, ev.target.value)}>
+          <select className={`rowsel ${excluded ? "selexcl" : ""}`} value={e.category} onChange={(ev) => onCat(e, ev.target.value)}>
             {options.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
+          {excluded && <span className="excltag">uitgesloten</span>}
         </td>
       )}
       {show("note") && (
