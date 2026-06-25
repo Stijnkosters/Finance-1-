@@ -146,7 +146,7 @@ export default function Dashboard() {
   const days = pl?.days || [];
   const totals = pl?.totals || {};
 
-  const NON_COST = ["Transfer", "Privé", "Refund"];
+  const NON_COST = ["Transfer", "Refund"];
   const expensesInRange = useMemo(() => {
     if (!pl || shop !== "totaal") return [];
     const { from, to } = pl.range;
