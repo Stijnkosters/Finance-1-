@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 
 const AUTH_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize";
 const TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token";
-const SCOPE = "https://ads.microsoft.com/ads.manage offline_access";
+const SCOPE = "openid profile offline_access https://ads.microsoft.com/msads.manage";
 
 function page(inner: string) {
   return new NextResponse(
