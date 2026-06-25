@@ -170,6 +170,7 @@ export async function GET(req: Request) {
       days,
       totals,
       adSource: adRes.source,
+      adBreakdown: adRes.breakdown,
       adWarning: adRes.warning,
       cogsSource,
       cogsWarning,

@@ -2,6 +2,7 @@ import { googleAdsConfigured, fetchAdSpendByDay } from "@/lib/googleAds";
 import adspendData from "@/data/adspend.json";
 
 const SHEET_CSV_URL = process.env.GOOGLE_SHEET_CSV_URL;
+const BING_SHEET_CSV_URL = process.env.BING_SHEET_CSV_URL || process.env.MICROSOFT_SHEET_CSV_URL;
 const manual: Record<string, number> = (adspendData as any).adspend || {};
 
 function normalizeDate(s: string): string | null {
@@ -40,9 +41,9 @@ function parseNum(s: string): number {
 
 // Route B: gepubliceerde Google Sheet als CSV. Verwacht kolommen 'date'/'day' en 'cost'/'kosten'.
 // Robuust voor de Google Ads-add-on die metadata-regels bovenaan zet vóór de echte koprij.
-async function fetchFromSheet(): Promise<Record<string, number>> {
-  if (!SHEET_CSV_URL) return {};
-  const res = await fetch(SHEET_CSV_URL, { cache: "no-store" });
+async function fetchFromSheet(url: string | undefined): Promise<Record<string, number>> {
+  if (!url) return {};
+  const res = await fetch(url, { cache: "no-store" });
   if (!res.ok) throw new Error(`Sheet CSV ${res.status}`);
   const text = await res.text();
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
@@ -75,27 +76,39 @@ async function fetchFromSheet(): Promise<Record<string, number>> {
 }
 
 export async function resolveAdSpend(from: string, to: string) {
-  let map: Record<string, number> = { ...manual };
-  let source = "manual";
+  const total: Record<string, number> = {};
+  const breakdown = { google: 0, bing: 0, manual: 0 };
+  const sources: string[] = [];
   let warning: string | null = null;
 
+  const addMap = (m: Record<string, number>) => {
+    let s = 0;
+    for (const [d, v] of Object.entries(m || {})) { total[d] = (total[d] || 0) + (v || 0); s += v || 0; }
+    return Math.round(s * 100) / 100;
+  };
+
+  // handmatige baseline (data/adspend.json) — normaal leeg, dient als fallback
+  breakdown.manual = addMap(manual);
+  if (breakdown.manual > 0) sources.push("handmatig");
+
+  // Google: API heeft voorrang, anders de Google-sheet
+  let googleMap: Record<string, number> = {};
   if (googleAdsConfigured()) {
-    try {
-      const g = await fetchAdSpendByDay(from, to);
-      map = { ...map, ...g };
-      source = "google_ads";
-    } catch (e: any) {
-      warning = `Google Ads koppeling faalde (${e.message}). Val terug op handmatige/Sheet-waarden.`;
-    }
+    try { googleMap = await fetchAdSpendByDay(from, to); if (Object.keys(googleMap).length) sources.push("Google Ads"); }
+    catch (e: any) { warning = `Google Ads API faalde (${e.message}).`; }
   }
-  if (source !== "google_ads" && SHEET_CSV_URL) {
-    try {
-      const s = await fetchFromSheet();
-      map = { ...map, ...s };
-      if (Object.keys(s).length) source = "sheet";
-    } catch (e: any) {
-      warning = (warning ? warning + " " : "") + `Sheet-CSV faalde (${e.message}).`;
-    }
+  if (!Object.keys(googleMap).length && SHEET_CSV_URL) {
+    try { googleMap = await fetchFromSheet(SHEET_CSV_URL); if (Object.keys(googleMap).length) sources.push("Google (Sheet)"); }
+    catch (e: any) { warning = (warning ? warning + " " : "") + `Google-sheet faalde (${e.message}).`; }
   }
-  return { map, source, warning };
+  breakdown.google = addMap(googleMap);
+
+  // Bing / Microsoft Advertising via sheet
+  if (BING_SHEET_CSV_URL) {
+    try { const b = await fetchFromSheet(BING_SHEET_CSV_URL); breakdown.bing = addMap(b); if (Object.keys(b).length) sources.push("Bing (Sheet)"); }
+    catch (e: any) { warning = (warning ? warning + " " : "") + `Bing-sheet faalde (${e.message}).`; }
+  }
+
+  const source = sources.length ? sources.join(" + ") : "manual";
+  return { map: total, source, warning, breakdown };
 }

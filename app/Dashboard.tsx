@@ -314,7 +314,11 @@ export default function Dashboard() {
                 <div className="kpis">
                   <Kpi label="Omzet" value={eur(totals.revenue || 0)} />
                   <Kpi label={`COGS${pl.cogsSource === "nichebay" ? " · NicheBay" : " · handmatig"}`} value={eur(totals.cogs || 0)} tone="down" />
-                  <Kpi label={`Ad spend${pl.adSource === "google_ads" ? " · Google Ads" : pl.adSource === "sheet" ? " · Sheet" : ""}`} value={eur(totals.adspend || 0)} />
+                  <Kpi
+                    label={`Ad spend${pl.adSource && pl.adSource !== "manual" ? ` · ${pl.adSource}` : ""}`}
+                    value={eur(totals.adspend || 0)}
+                    sub={pl.adBreakdown && (pl.adBreakdown.bing > 0 || pl.adBreakdown.google > 0) ? `G ${eur(pl.adBreakdown.google || 0)} · B ${eur(pl.adBreakdown.bing || 0)}` : undefined}
+                  />
                   <Kpi label="P&L winst" value={eur(totals.totalProfit || 0)} tone={(totals.totalProfit || 0) >= 0 ? "up" : "down"} />
                   <Kpi label="Netto na overhead" value={eur(netTotal)} tone={netTotal >= 0 ? "up" : "down"} />
                   <Kpi label="Orders / units" value={`${totals.orders || 0} / ${totals.units || 0}`} />
