@@ -852,15 +852,26 @@ function ImportPanel({ onDone, onReload, cats, expenses }: any) {
             });
             d.setMonth(d.getMonth() + 1);
           }
-          // providers = de methodes die in je data voorkomen (jouw echte rekeningen)
-          let providers = Array.from(new Set(exps.map((e: any) => e.methode).filter(Boolean))).sort() as string[];
-          if (!providers.length) providers = ["Rabobank", "American Express", "PayPal"];
+          // providers = vaste lijst van jouw rekeningen (key = label in je data, naam = weergave)
+          const FIXED_PROVIDERS: { key: string; name: string }[] = [
+            { key: "RABO", name: "Rabobank" },
+            { key: "AMEX", name: "American Express" },
+            { key: "PAYPAL", name: "PayPal" },
+            { key: "REVOLUT", name: "Revolut" },
+            { key: "WISE", name: "Wise" },
+            { key: "RABO-CC", name: "Rabo creditcard" },
+          ];
+          const fixedKeys = new Set(FIXED_PROVIDERS.map((p) => p.key));
+          const extra = (Array.from(new Set(exps.map((e: any) => e.methode).filter(Boolean))) as string[])
+            .filter((k) => !fixedKeys.has(k))
+            .map((k) => ({ key: k, name: k }));
+          const providers = [...FIXED_PROVIDERS, ...extra];
 
-          const count = (mv: string, prov: string) =>
-            exps.filter((e: any) => e.methode === prov && (e.date || "").startsWith(mv)).length;
+          const count = (mv: string, key: string) =>
+            exps.filter((e: any) => e.methode === key && (e.date || "").startsWith(mv)).length;
 
           const missing: string[] = [];
-          months.forEach((mo) => providers.forEach((p) => { if (count(mo.val, p) === 0) missing.push(`${mo.label} · ${p}`); }));
+          months.forEach((mo) => providers.forEach((p) => { if (count(mo.val, p.key) === 0) missing.push(`${mo.label} · ${p.name}`); }));
 
           if (!months.length) return <p className="muted" style={{ marginTop: 0 }}>Nog geen afgeronde maand sinds januari 2026.</p>;
 
@@ -882,7 +893,7 @@ function ImportPanel({ onDone, onReload, cats, expenses }: any) {
                   <thead>
                     <tr>
                       <th>Maand</th>
-                      {providers.map((p) => <th key={p} className="center">{p}</th>)}
+                      {providers.map((p) => <th key={p.key} className="center">{p.name}</th>)}
                     </tr>
                   </thead>
                   <tbody>
@@ -890,9 +901,9 @@ function ImportPanel({ onDone, onReload, cats, expenses }: any) {
                       <tr key={mo.val}>
                         <td className="nowrap strong" style={{ textTransform: "capitalize" }}>{mo.label}</td>
                         {providers.map((p) => {
-                          const n = count(mo.val, p);
+                          const n = count(mo.val, p.key);
                           return (
-                            <td key={p} className="center">
+                            <td key={p.key} className="center">
                               {n > 0
                                 ? <span className="covok">✓ <span className="dim">{n}</span></span>
                                 : <span className="covmiss">—</span>}
