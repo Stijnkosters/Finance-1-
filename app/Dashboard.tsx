@@ -262,9 +262,11 @@ export default function Dashboard() {
               <div className="banner warn">{pl.cogsWarning}</div>
             )}
             {pl.cogsSource === "nichebay" && tab === "overzicht" && (
-              <div className="banner info">
-                COGS automatisch uit NicheBay · {pl.nbMatched}/{pl.orderCount} orders gematcht op ordernummer.
-                {pl.nbMatched === 0 && " Geen matches — open /api/nichebay om de veldnamen te checken."}
+              <div className={`banner ${(pl.ordersNoCost || 0) > 0 ? "warn" : "info"}`}>
+                COGS uit NicheBay · {pl.nbMatched}/{pl.orderCount} orders met echte kostprijs.
+                {(pl.nbZero || 0) > 0 && ` ${pl.nbZero} orders gaven €0 bij NicheBay (nog niet gefactureerd) → teruggevallen op je eigen inkoopprijzen.`}
+                {(pl.ordersNoCost || 0) > 0 && ` ⚠️ ${pl.ordersNoCost} orders hebben €0 COGS (geen NicheBay-kost én geen prijs in costs.json) → je winst is te hoog. Vul de inkoopprijzen aan.`}
+                {pl.nbMatched === 0 && (pl.nbZero || 0) === 0 && " Geen matches — open /api/nichebay om de veldnamen te checken."}
               </div>
             )}
             {pl.adWarning && tab === "overzicht" && (

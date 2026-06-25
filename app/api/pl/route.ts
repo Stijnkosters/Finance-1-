@@ -49,6 +49,8 @@ export async function GET(req: Request) {
       }
     }
     let nbMatched = 0;
+    let nbZero = 0;
+    let ordersNoCost = 0;
 
     const byDay: Record<string, any> = {};
     let unmatched: Record<string, { title: string; units: number }> = {};
@@ -73,10 +75,13 @@ export async function GET(req: Request) {
       const orderNo = String(o.name || "").replace(/^#/, "").trim();
       const numId = String(o.id || "").split("/").pop() || "";
       const nbCost = nbMap[orderNo] ?? (numId ? nbMap[numId] : undefined);
-      const hasNb = nbCost != null;
+      // alleen een ECHTE NicheBay-kost (> 0) telt; €0/leeg = nog niet gefactureerd -> val terug op costs.json
+      const hasNb = nbCost != null && nbCost > 0;
       if (hasNb) nbMatched += 1;
+      else if (nbCost != null) nbZero += 1;
 
       let lineCogs = 0;
+      let lineCovered = true;
       for (const li of o.lineItems?.nodes || []) {
         const vid = li.variant?.id;
         const qty = li.quantity || 0;
@@ -85,12 +90,14 @@ export async function GET(req: Request) {
         if (c) {
           lineCogs += qty * (c.cost || 0);
         } else if (vid && !hasNb) {
+          lineCovered = false;
           if (!unmatched[vid]) unmatched[vid] = { title: li.title, units: 0 };
           unmatched[vid].units += qty;
         }
       }
-      // NicheBay-kost heeft voorrang; anders costs.json
+      // NicheBay-kost heeft voorrang; anders costs.json. Geen van beide -> €0 (en flaggen)
       bucket.cogs += hasNb ? nbCost : lineCogs;
+      if (!hasNb && !lineCovered) ordersNoCost += 1;
     }
 
     const days = Object.values(byDay)
@@ -167,6 +174,8 @@ export async function GET(req: Request) {
       cogsSource,
       cogsWarning,
       nbMatched,
+      nbZero,
+      ordersNoCost,
       orderCount: orders.length,
       missingCosts,
       unmatched: Object.entries(unmatched).map(([id, v]) => ({ id, ...v })),
