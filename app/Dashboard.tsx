@@ -11,7 +11,7 @@ const eur = (n: number) => new Intl.NumberFormat("nl-NL", { style: "currency", c
 
 // Vaste terugval zodat de categorie-dropdowns nooit leeg zijn, ook als /api/data hapert.
 const FALLBACK_CATEGORIES = [
-  "Software", "AI/Tools", "Ads", "Boekhouding",
+  "Software", "AI/Tools", "Ads", "Agency", "Boekhouding",
   "Bankkosten", "Team", "Verzending", "Voorraad", "Leverancier betalingen", "Pandkosten", "Refund klant", "Transfer", "Privé", "Overig",
 ];
 const numf = (n: number, d = 2) => new Intl.NumberFormat("nl-NL", { minimumFractionDigits: d, maximumFractionDigits: d }).format(n || 0);

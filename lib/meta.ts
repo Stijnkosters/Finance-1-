@@ -4,7 +4,7 @@
 import { TRANSFER_RE } from "@/lib/bankparse";
 
 export const CATEGORIES = [
-  "Software", "AI/Tools", "Ads", "Boekhouding",
+  "Software", "AI/Tools", "Ads", "Agency", "Boekhouding",
   "Bankkosten", "Team", "Verzending", "Voorraad", "Leverancier betalingen", "Pandkosten", "Refund klant", "Transfer", "Privé", "Overig",
 ];
 
