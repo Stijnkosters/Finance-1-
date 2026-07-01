@@ -11,8 +11,8 @@ const eur = (n: number) => new Intl.NumberFormat("nl-NL", { style: "currency", c
 
 // Vaste terugval zodat de categorie-dropdowns nooit leeg zijn, ook als /api/data hapert.
 const FALLBACK_CATEGORIES = [
-  "Software", "AI/Tools", "Marketing", "Boekhouding",
-  "Bankkosten", "Team", "Verzending", "Voorraad", "Leverancier betalingen", "Pandkosten", "Refund", "Transfer", "Privé", "Overig",
+  "Software", "AI/Tools", "Ads", "Boekhouding",
+  "Bankkosten", "Team", "Verzending", "Voorraad", "Leverancier betalingen", "Pandkosten", "Refund klant", "Transfer", "Privé", "Overig",
 ];
 const numf = (n: number, d = 2) => new Intl.NumberFormat("nl-NL", { minimumFractionDigits: d, maximumFractionDigits: d }).format(n || 0);
 const pctf = (n: number) => `${(n * 100).toFixed(1).replace(".", ",")}%`;
@@ -51,7 +51,7 @@ function lastMonths(n: number) {
   return out;
 }
 const MONTHS = lastMonths(12);
-const EXCLUDED_CATS = ["Transfer", "Refund", "Marketing"];
+const EXCLUDED_CATS = ["Transfer", "Refund klant", "Refund", "Ads", "Marketing", "Leverancier betalingen"];
 const EXP_COLS: [string, string, boolean][] = [
   ["date", "Datum", true], ["omschrijving", "Omschrijving", true], ["category", "Categorie", true],
   ["note", "Notitie", false], ["methode", "Methode", false], ["bedrag", "Bedrag", false],
@@ -154,7 +154,8 @@ export default function Dashboard() {
     const { from, to } = pl.range;
     return (data.expenses || []).filter((e: any) => e.date >= from && e.date <= to && !NON_COST.includes(e.category));
   }, [data, pl, shop]);
-  const overhead = expensesInRange.reduce((a: number, e: any) => a + (e.bedrag || 0), 0);
+  const overhead = expensesInRange.reduce((a: number, e: any) => a + (e.bedrag || 0), 0) - expensesInRange.filter((e: any) => e.category === "Privé").reduce((a: number, e: any) => a + (e.bedrag || 0), 0);
+  const prive = expensesInRange.filter((e: any) => e.category === "Privé").reduce((a: number, e: any) => a + (e.bedrag || 0), 0);
 
   const timeline = useMemo(() => {
     let cum = 0;
@@ -167,7 +168,7 @@ export default function Dashboard() {
     });
   }, [days, expensesInRange]);
 
-  const netTotal = (totals.totalProfit || 0) - overhead;
+  const netTotal = (totals.totalProfit || 0) - overhead - prive;
   const allTimeNet = timeline.length ? timeline[timeline.length - 1].cumulatief : 0;
   const up = allTimeNet >= 0;
 
@@ -179,12 +180,13 @@ export default function Dashboard() {
       { key: "Productkosten (COGS)", val: totals.cogs || 0 },
       { key: "Advertentiekosten", val: totals.adspend || 0 },
       { key: "Overhead", val: overhead },
+      { key: "Privé", val: prive },
       { key: "Refunds", val: totals.refunds || 0 },
       { key: "Shopify fees (schatting)", val: totals.fees || 0 },
     ].filter((i) => i.val > 0).sort((a, b) => b.val - a.val);
     const sum = items.reduce((a, i) => a + i.val, 0) || 1;
     return items.map((i) => ({ ...i, share: i.val / sum }));
-  }, [totals, overhead]);
+  }, [totals, overhead, prive]);
 
   const byCategory = useMemo(() => {
     const m: Record<string, number> = {};
@@ -319,7 +321,7 @@ export default function Dashboard() {
                       {up ? <TrendingUp size={28} /> : <TrendingDown size={28} />}
                       <span>{eur(netTotal)}</span>
                     </div>
-                    <div className="hero-note">{up ? "In de plus." : "In de min — kosten drukken."} P&L-winst {eur(totals.totalProfit || 0)} − overhead {eur(overhead)}.</div>
+                    <div className="hero-note">{up ? "In de plus." : "In de min — kosten drukken."} P&L-winst {eur(totals.totalProfit || 0)} − overhead {eur(overhead)} − privé {eur(prive)}.</div>
                   </div>
                   <div>
                     <ResponsiveContainer width="100%" height={120}>
@@ -703,6 +705,7 @@ function VermogenPanel() {
 
 function ImportPanel({ onDone, onReload, cats, expenses }: any) {
   const [busy, setBusy] = useState(false);
+  const [drag, setDrag] = useState(false);
   const [res, setRes] = useState<any>(null);
   const [pending, setPending] = useState<any[]>([]);
   const [income, setIncome] = useState<any[]>([]);
@@ -940,11 +943,22 @@ function ImportPanel({ onDone, onReload, cats, expenses }: any) {
             {SOURCE_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
         </div>
-        <label className="dropzone">
+        <label
+          className={`dropzone ${drag ? "dragging" : ""}`}
+          onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
+          onDragEnter={(e) => { e.preventDefault(); setDrag(true); }}
+          onDragLeave={(e) => { e.preventDefault(); setDrag(false); }}
+          onDrop={(e) => {
+            e.preventDefault(); setDrag(false);
+            const f = e.dataTransfer.files?.[0];
+            if (f && /\.csv$/i.test(f.name)) upload(f);
+            else if (f) setErr("Alleen .csv-bestanden.");
+          }}
+        >
           <input type="file" accept=".csv,text/csv" style={{ display: "none" }}
             onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(f); e.target.value = ""; }} />
           <Upload size={22} />
-          <span>{busy ? "Bezig…" : "Kies of sleep je CSV-bestand"}</span>
+          <span>{busy ? "Bezig…" : drag ? "Laat los om te importeren" : "Kies of sleep je CSV-bestand"}</span>
         </label>
         {err && <div className="banner err" style={{ marginTop: 12 }}>{err}</div>}
         {msg && <div className="banner ok" style={{ marginTop: 12 }}>{msg}</div>}

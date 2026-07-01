@@ -4,12 +4,12 @@
 import { TRANSFER_RE } from "@/lib/bankparse";
 
 export const CATEGORIES = [
-  "Software", "AI/Tools", "Marketing", "Boekhouding",
-  "Bankkosten", "Team", "Verzending", "Voorraad", "Leverancier betalingen", "Pandkosten", "Refund", "Transfer", "Privé", "Overig",
+  "Software", "AI/Tools", "Ads", "Boekhouding",
+  "Bankkosten", "Team", "Verzending", "Voorraad", "Leverancier betalingen", "Pandkosten", "Refund klant", "Transfer", "Privé", "Overig",
 ];
 
 // Categorieën die NIET als kost meetellen (overboekingen + klant-refunds die Shopify al verrekent).
-export const NON_COST = ["Transfer", "Refund", "Marketing"];
+export const NON_COST = ["Transfer", "Refund klant", "Refund", "Ads", "Marketing", "Leverancier betalingen"];
 
 export function expenseId(e: any): string {
   const base = `${e.date}|${Number(e.bedrag).toFixed(2)}|${e.methode || ""}|${(e.omschrijving || "").slice(0, 40)}`;

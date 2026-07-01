@@ -95,7 +95,7 @@ export async function paypalTransactions(days = 31) {
       amount = e; desc = `${t.desc} [${t.currency} ${t.amount}]`;
       converted++;
     }
-    if (t.isRefund) { txs.push({ date: t.date, desc: `Refund — ${desc}`, amount, category: "Refund" }); refunds++; }
+    if (t.isRefund) { txs.push({ date: t.date, desc: `Refund — ${desc}`, amount, category: "Refund klant" }); refunds++; }
     else txs.push({ date: t.date, desc, amount });
   }
   return { txs, fx: { converted, failed: fxFailed, total: raw.length, refunds } };

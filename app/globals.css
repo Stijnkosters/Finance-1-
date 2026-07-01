@@ -195,3 +195,6 @@ tr.excl td { background: rgba(206,44,44,0.05); }
 tr.excl .rowdesc, tr.excl .mono { color: var(--down,#CE2C2C); }
 .rowsel.selexcl { color: var(--down,#CE2C2C); border-color: rgba(206,44,44,0.4); }
 .excltag { display:inline-block; margin-left:8px; font-size:11px; font-weight:700; color:var(--down,#CE2C2C); text-transform:uppercase; letter-spacing:0.03em; }
+
+/* Drag & drop actief */
+.dropzone.dragging { border-color: var(--accent,#3A3FD6); background: rgba(58,63,214,0.06); }
