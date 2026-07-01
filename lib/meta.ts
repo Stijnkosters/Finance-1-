@@ -40,6 +40,15 @@ export function matchRule(rules: any[], desc: string): string | null {
 }
 
 // Voegt id + mkey toe en past geleerde regel + handmatige override toe (override wint).
+function fixYmd(d: string, methode?: string): string {
+  const m = (d || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return d;
+  const [, y, a, b] = m;
+  // AMEX exporteert YYYY-DD-MM → altijd omdraaien. Andere bronnen: alleen als maand onmogelijk is (>12).
+  if (methode === "AMEX" || (Number(a) > 12 && Number(b) <= 12)) return `${y}-${b}-${a}`;
+  return d;
+}
+
 export function decorate(expenses: any[], meta: Record<string, any>, rules: any[]) {
   return expenses.map((e) => {
     const id = expenseId(e);
@@ -49,6 +58,7 @@ export function decorate(expenses: any[], meta: Record<string, any>, rules: any[
     return {
       ...e,
       id,
+      date: fixYmd(e.date, e.methode),
       mkey: merchantKey(e.omschrijving || ""),
       raw: e.omschrijving || "",
       label: ov.label || rule?.label || e.omschrijving || "",
