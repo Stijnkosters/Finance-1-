@@ -546,18 +546,22 @@ function FixedCosts({ expenses }: { expenses: any[] }) {
   const [cat, setCat] = useState("");
   const [minMonths, setMinMonths] = useState(2);
 
-  const { rows, cats, totalMonthly } = useMemo(() => {
+  const { rows, cats, totalMonthly, cutoff, asOf } = useMemo(() => {
     const groups: Record<string, any> = {};
+    let asOf = "";
     (expenses || []).forEach((e) => {
       if (e.deleted) return;
       if (FIXED_EXCLUDE.includes(e.category)) return;
       if (!/^\d{4}-\d{2}/.test(e.date || "")) return;
+      if ((e.date || "") > asOf) asOf = e.date;
       const ym = e.date.slice(0, 7);
       const key = e.mkey || e.label || e.raw || "?";
       const g = groups[key] || (groups[key] = { key, label: e.label || e.raw || key, category: e.category, perMonth: {}, lastDate: "" });
       g.perMonth[ym] = (g.perMonth[ym] || 0) + (e.bedrag || 0);
       if ((e.date || "") >= g.lastDate) { g.lastDate = e.date; g.label = e.label || g.label; g.category = e.category || g.category; }
     });
+    if (!asOf) asOf = new Date().toISOString().slice(0, 10);
+    const cutoff = new Date(new Date(asOf + "T00:00:00").getTime() - 31 * 86400000).toISOString().slice(0, 10);
     let rows = Object.values(groups).map((g: any) => {
       const months = Object.keys(g.perMonth).sort();
       const vals = months.map((m) => g.perMonth[m]);
@@ -568,13 +572,13 @@ function FixedCosts({ expenses }: { expenses: any[] }) {
       const rising = months.length >= 2 && latest > first * 1.15;
       return { ...g, months: months.length, monthly, latest, total, rising };
     });
-    rows = rows.filter((r: any) => r.months >= minMonths);
+    rows = rows.filter((r: any) => r.months >= minMonths && r.lastDate >= cutoff);
     const cats = Array.from(new Set(rows.map((r: any) => r.category))).sort();
     if (cat) rows = rows.filter((r: any) => r.category === cat);
     if (q.trim()) { const s = q.toLowerCase(); rows = rows.filter((r: any) => (r.label + " " + r.category).toLowerCase().includes(s)); }
     rows.sort((a: any, b: any) => b.monthly - a.monthly);
     const totalMonthly = rows.reduce((a: number, r: any) => a + r.monthly, 0);
-    return { rows, cats, totalMonthly };
+    return { rows, cats, totalMonthly, cutoff, asOf };
   }, [expenses, q, cat, minMonths]);
 
   return (
@@ -586,7 +590,7 @@ function FixedCosts({ expenses }: { expenses: any[] }) {
           <span className="fixed-year mono">≈ {eur(totalMonthly * 12)} per jaar</span>
         </div>
         <div className="fixed-note muted">
-          Terugkerende kosten die in minstens {minMonths} verschillende maanden voorkomen, per maand gemiddeld en gesorteerd op bedrag. Bovenaan = grootste besparingskans. Ads (variabel), transfers, refunds, leverancier­betalingen en privé zijn uitgesloten.
+          Terugkerende kosten die in minstens {minMonths} verschillende maanden voorkomen én waarvan de laatste betaling binnen 31 dagen valt (peildatum {ddmmyyyy(asOf)}, dus vanaf {ddmmyyyy(cutoff)}). Gestopte of opgezegde abo's vallen er zo automatisch uit. Per maand gemiddeld, gesorteerd op bedrag — bovenaan = grootste besparingskans. Ads, transfers, refunds, leverancier­betalingen en privé zijn uitgesloten.
         </div>
       </div>
 
