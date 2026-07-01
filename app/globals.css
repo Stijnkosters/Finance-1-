@@ -198,3 +198,24 @@ tr.excl .rowdesc, tr.excl .mono { color: var(--down,#CE2C2C); }
 
 /* Drag & drop actief */
 .dropzone.dragging { border-color: var(--accent,#3A3FD6); background: rgba(58,63,214,0.06); }
+
+/* Vaste lasten */
+.fixed-wrap { display: flex; flex-direction: column; gap: 16px; }
+.fixed-topgrid { display: grid; grid-template-columns: minmax(220px, 280px) 1fr; gap: 16px; align-items: stretch; }
+@media (max-width: 720px) { .fixed-topgrid { grid-template-columns: 1fr; } }
+.fixed-total { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; gap: 4px; justify-content: center; }
+.fixed-total b { font-size: 30px; line-height: 1.1; color: var(--down); }
+.fixed-total b .per { font-size: 14px; color: var(--muted); font-weight: 500; margin-left: 4px; }
+.fixed-total .fixed-year { font-size: 13px; color: var(--muted); margin-top: 2px; }
+.fixed-note { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; font-size: 13px; line-height: 1.5; display: flex; align-items: center; }
+.fixed-controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.fixed-controls select { padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--card); color: var(--text); font-size: 14px; }
+.seg.minm button { padding: 7px 12px; font-size: 13px; }
+.fixed-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.fixed-table th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--border); font-weight: 600; }
+.fixed-table td { padding: 11px 10px; border-bottom: 1px solid var(--border); }
+.fixed-table tr:last-child td { border-bottom: none; }
+.fixed-table .r { text-align: right; }
+.fixed-table .b { font-weight: 700; }
+.cattag { font-size: 11px; padding: 3px 8px; border-radius: 999px; background: var(--bg); border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
+.risetag { font-size: 11px; color: var(--down); margin-left: 8px; font-weight: 600; }

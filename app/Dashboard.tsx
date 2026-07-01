@@ -5,7 +5,7 @@ import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, ReferenceLine, Cell,
 } from "recharts";
-import { TrendingUp, TrendingDown, LayoutDashboard, CalendarDays, Receipt, Wallet, RefreshCw, Upload, Trash2 } from "lucide-react";
+import { TrendingUp, TrendingDown, LayoutDashboard, CalendarDays, Receipt, Wallet, RefreshCw, Upload, Trash2, Repeat } from "lucide-react";
 
 const eur = (n: number) => new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR" }).format(n || 0);
 
@@ -219,6 +219,7 @@ export default function Dashboard() {
           ["overzicht", "Overzicht", LayoutDashboard],
           ["pl", "Dagelijkse P&L", CalendarDays],
           ["uitgaves", "Uitgaves", Receipt],
+          ["vaste", "Vaste lasten", Repeat],
           ["balans", "Vermogen", Wallet],
           ["import", "Importeren", Upload],
         ].map(([k, label, Icon]: any) => (
@@ -239,7 +240,7 @@ export default function Dashboard() {
 
       <main className="main">
         <div className="row-between">
-          <h2 className="h2">{tab === "overzicht" ? "Overzicht" : tab === "pl" ? "Dagelijkse P&L" : tab === "uitgaves" ? "Uitgaves" : tab === "balans" ? "Vermogen" : "Importeren"}</h2>
+          <h2 className="h2">{tab === "overzicht" ? "Overzicht" : tab === "pl" ? "Dagelijkse P&L" : tab === "uitgaves" ? "Uitgaves" : tab === "vaste" ? "Vaste lasten" : tab === "balans" ? "Vermogen" : "Importeren"}</h2>
           {tab !== "import" && tab !== "uitgaves" && (
             <div className="ctrls">
               <div className="seg">
@@ -530,9 +531,100 @@ export default function Dashboard() {
         )}
 
         {tab === "balans" && <VermogenPanel />}
+        {tab === "vaste" && <FixedCosts expenses={data.expenses || []} />}
 
         {tab === "import" && <ImportPanel onDone={load} onReload={reloadData} cats={(data.categories && data.categories.length) ? data.categories : FALLBACK_CATEGORIES} expenses={data.expenses || []} />}
       </main>
+    </div>
+  );
+}
+
+const FIXED_EXCLUDE = ["Transfer", "Refund", "Refund klant", "Ads", "Marketing", "Leverancier betalingen", "Privé"];
+
+function FixedCosts({ expenses }: { expenses: any[] }) {
+  const [q, setQ] = useState("");
+  const [cat, setCat] = useState("");
+  const [minMonths, setMinMonths] = useState(2);
+
+  const { rows, cats, totalMonthly } = useMemo(() => {
+    const groups: Record<string, any> = {};
+    (expenses || []).forEach((e) => {
+      if (e.deleted) return;
+      if (FIXED_EXCLUDE.includes(e.category)) return;
+      if (!/^\d{4}-\d{2}/.test(e.date || "")) return;
+      const ym = e.date.slice(0, 7);
+      const key = e.mkey || e.label || e.raw || "?";
+      const g = groups[key] || (groups[key] = { key, label: e.label || e.raw || key, category: e.category, perMonth: {}, lastDate: "" });
+      g.perMonth[ym] = (g.perMonth[ym] || 0) + (e.bedrag || 0);
+      if ((e.date || "") >= g.lastDate) { g.lastDate = e.date; g.label = e.label || g.label; g.category = e.category || g.category; }
+    });
+    let rows = Object.values(groups).map((g: any) => {
+      const months = Object.keys(g.perMonth).sort();
+      const vals = months.map((m) => g.perMonth[m]);
+      const total = vals.reduce((a: number, b: number) => a + b, 0);
+      const monthly = total / months.length;
+      const latest = g.perMonth[months[months.length - 1]];
+      const first = g.perMonth[months[0]];
+      const rising = months.length >= 2 && latest > first * 1.15;
+      return { ...g, months: months.length, monthly, latest, total, rising };
+    });
+    rows = rows.filter((r: any) => r.months >= minMonths);
+    const cats = Array.from(new Set(rows.map((r: any) => r.category))).sort();
+    if (cat) rows = rows.filter((r: any) => r.category === cat);
+    if (q.trim()) { const s = q.toLowerCase(); rows = rows.filter((r: any) => (r.label + " " + r.category).toLowerCase().includes(s)); }
+    rows.sort((a: any, b: any) => b.monthly - a.monthly);
+    const totalMonthly = rows.reduce((a: number, r: any) => a + r.monthly, 0);
+    return { rows, cats, totalMonthly };
+  }, [expenses, q, cat, minMonths]);
+
+  return (
+    <div className="fixed-wrap">
+      <div className="fixed-topgrid">
+        <div className="fixed-total">
+          <span className="muted">Geschatte vaste lasten</span>
+          <b className="mono">{eur(totalMonthly)}<span className="per">/maand</span></b>
+          <span className="fixed-year mono">≈ {eur(totalMonthly * 12)} per jaar</span>
+        </div>
+        <div className="fixed-note muted">
+          Terugkerende kosten die in minstens {minMonths} verschillende maanden voorkomen, per maand gemiddeld en gesorteerd op bedrag. Bovenaan = grootste besparingskans. Ads (variabel), transfers, refunds, leverancier­betalingen en privé zijn uitgesloten.
+        </div>
+      </div>
+
+      <div className="fixed-controls">
+        <input className="expsearch" placeholder="Zoek leverancier…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <select value={cat} onChange={(e) => setCat(e.target.value)}>
+          <option value="">Alle categorieën</option>
+          {cats.map((c: string) => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <div className="seg minm">
+          {[2, 3, 4].map((n) => (
+            <button key={n} className={minMonths === n ? "on" : ""} onClick={() => setMinMonths(n)}>≥{n} mnd</button>
+          ))}
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-body">
+          <table className="fixed-table">
+            <thead>
+              <tr><th>Leverancier</th><th>Categorie</th><th className="r">Maanden</th><th className="r">Gem./maand</th><th className="r">Laatste</th><th className="r">Per jaar</th></tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 && <tr><td colSpan={6} className="muted">Geen terugkerende kosten gevonden.</td></tr>}
+              {rows.map((r: any) => (
+                <tr key={r.key}>
+                  <td>{r.label}{r.rising && <span className="risetag" title="Loopt op t.o.v. eerste maand">↑ stijgt</span>}</td>
+                  <td><span className="cattag">{r.category}</span></td>
+                  <td className="r mono">{r.months}</td>
+                  <td className="r mono b">{eur(r.monthly)}</td>
+                  <td className="r mono">{eur(r.latest)}</td>
+                  <td className="r mono muted">{eur(r.monthly * 12)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }
