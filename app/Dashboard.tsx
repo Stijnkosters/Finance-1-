@@ -31,6 +31,7 @@ function rangeFor(period: string) {
   else if (period === "week") from.setDate(to.getDate() - 6);
   else if (period === "maand") from.setDate(to.getDate() - 29);
   else if (period === "kwartaal") from.setDate(to.getDate() - 89);
+  else if (period === "jaar") return { from: `${to.getFullYear()}-01-01`, to: ymd(to) };
   return { from: ymd(from), to: ymd(to) };
 }
 
@@ -242,7 +243,7 @@ export default function Dashboard() {
           {tab !== "import" && tab !== "uitgaves" && (
             <div className="ctrls">
               <div className="seg">
-                {[["dezemaand", "Deze maand"], ["vandaag", "Vandaag"], ["week", "Week"], ["maand", "30d"], ["kwartaal", "90d"]].map(([v, l]) => (
+                {[["dezemaand", "Deze maand"], ["vandaag", "Vandaag"], ["week", "Week"], ["maand", "30d"], ["kwartaal", "90d"], ["jaar", "Dit jaar"]].map(([v, l]) => (
                   <button key={v} className={!custom && period === v ? "on" : ""} onClick={() => pickQuick(v)}>{l}</button>
                 ))}
               </div>
