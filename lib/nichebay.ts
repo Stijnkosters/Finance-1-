@@ -140,11 +140,12 @@ function findLineItems(order: any): any[] {
   return [];
 }
 
-export async function fetchNicheBayProductCosts(maxPages = 20, limit = 100) {
-  const prod: Record<string, { name: string; sku: string; costs: number[]; last: number }> = {};
+export async function fetchNicheBayProductCosts(maxPages = 30, limit = 100) {
+  const prod: Record<string, { name: string; sku: string; clean: number[]; alloc: number[]; last: number; lastDate: number }> = {};
   let sampleOrder: any = null;
   let sampleLine: any = null;
   let ordersSeen = 0;
+  const LINE_PRICE_FIELDS = ["currency_price", "presentment_price", "price", "unit_price"];
   for (let page = 1; page <= maxPages; page++) {
     const j = await nbGet(`/orders?page=${page}&limit=${limit}`);
     const list = extractList(j);
@@ -152,26 +153,41 @@ export async function fetchNicheBayProductCosts(maxPages = 20, limit = 100) {
     if (!sampleOrder) sampleOrder = list[0];
     for (const o of list) {
       ordersSeen++;
+      const orderCost = toNum(pick(o, COST_FIELDS)); // store_pay_fee = totale inkoop van deze order
       const lines = findLineItems(o);
-      for (const li of lines) {
+      if (!lines.length || orderCost <= 0) continue;
+      const when = toNum(o.paid_at || o.created_at || 0);
+      // gewicht per regel = verkoopprijs × aantal
+      const weights = lines.map((li: any) => Math.max(1, toNum(pick(li, QTY_FIELDS)) || 1) * (toNum(pick(li, LINE_PRICE_FIELDS)) || 1));
+      const totW = weights.reduce((a, b) => a + b, 0) || lines.length;
+      lines.forEach((li: any, i: number) => {
         if (!sampleLine) sampleLine = li;
         const name = String(pick(li, NAME_FIELDS) || "").trim();
         const sku = String(pick(li, SKU_FIELDS) || "").trim();
         const qty = Math.max(1, toNum(pick(li, QTY_FIELDS)) || 1);
-        const rawCost = toNum(pick(li, UNITCOST_FIELDS));
-        if (!name && !sku) continue;
-        const unit = rawCost > 0 ? rawCost / (rawCost > 200 && qty > 1 ? qty : 1) : 0; // ruwe unit-schatting
+        if (!name && !sku) return;
+        const allocated = lines.length === 1 ? orderCost : orderCost * (weights[i] / totW);
+        const unit = allocated / qty;
+        if (unit <= 0) return;
         const key = (sku || name).toLowerCase();
-        const p = prod[key] || (prod[key] = { name: name || sku, sku, costs: [], last: 0 });
+        const p = prod[key] || (prod[key] = { name: name || sku, sku, clean: [], alloc: [], last: 0, lastDate: 0 });
         if (name && !p.name) p.name = name;
-        if (unit > 0) { p.costs.push(unit); p.last = unit; }
-      }
+        if (lines.length === 1) p.clean.push(unit); else p.alloc.push(unit);
+        if (when >= p.lastDate) { p.lastDate = when; p.last = unit; }
+      });
     }
     if (list.length < limit) break;
   }
   const products = Object.values(prod).map((p) => {
-    const avg = p.costs.length ? p.costs.reduce((a, b) => a + b, 0) / p.costs.length : 0;
-    return { name: p.name, sku: p.sku, avgCost: Math.round(avg * 100) / 100, lastCost: Math.round(p.last * 100) / 100, orders: p.costs.length };
+    const src = p.clean.length ? p.clean : p.alloc;
+    const avg = src.length ? src.reduce((a, b) => a + b, 0) / src.length : 0;
+    return {
+      name: p.name, sku: p.sku,
+      avgCost: Math.round(avg * 100) / 100,
+      lastCost: Math.round(p.last * 100) / 100,
+      orders: p.clean.length + p.alloc.length,
+      basis: p.clean.length ? "single-item" : "verdeeld",
+    };
   }).sort((a, b) => b.avgCost - a.avgCost);
   return { products, ordersSeen, sampleOrder, sampleLine };
 }
