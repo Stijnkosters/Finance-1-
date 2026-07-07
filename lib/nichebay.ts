@@ -191,3 +191,88 @@ export async function fetchNicheBayProductCosts(maxPages = 30, limit = 100) {
   }).sort((a, b) => b.avgCost - a.avgCost);
   return { products, ordersSeen, sampleOrder, sampleLine };
 }
+
+// ---- Productcatalogus-probe: zoekt het juiste endpoint voor huidige inkoopprijs per product ----
+export async function nbCatalogProbe() {
+  const candidates = [
+    "/products?page=1&limit=5", "/product/list?page=1&limit=5", "/product?page=1&limit=5",
+    "/goods?page=1&limit=5", "/goods/list?page=1&limit=5", "/goods/page?page=1&limit=5",
+    "/store/products?page=1&limit=5", "/store/goods?page=1&limit=5",
+    "/sku?page=1&limit=5", "/sku/list?page=1&limit=5", "/product/page?page=1&limit=5",
+    "/spu?page=1&limit=5", "/spu/list?page=1&limit=5", "/catalog?page=1&limit=5",
+  ];
+  const results: any[] = [];
+  for (const path of candidates) {
+    try {
+      const j = await nbGet(path);
+      const list = extractList(j);
+      results.push({
+        path,
+        ok: true,
+        count: Array.isArray(list) ? list.length : 0,
+        keys: list && list[0] ? Object.keys(list[0]) : (j?.data ? Object.keys(j.data) : Object.keys(j || {})),
+        sample: (list && list[0]) || j?.data || j || null,
+      });
+      if (Array.isArray(list) && list.length) break; // gevonden
+    } catch (e: any) {
+      results.push({ path, ok: false, error: String(e.message).slice(0, 120) });
+    }
+  }
+  return results;
+}
+
+// ---- Huidige inkoopprijs per product uit orders (incl. tax via store_pay_fee) ----
+const VARIANT_FIELDS = ["variant_id", "variantId", "variant_no", "shopify_variant_id", "sku_id", "skuId"];
+const PRODUCTID_FIELDS = ["product_id", "productId", "shopify_product_id", "spu_id"];
+
+export function nbNormName(s: string): string {
+  return String(s || "").replace(/™|®/g, "").replace(/\s[–—|].*$/, "").replace(/\s-\s.*$/, "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+// Geeft huidige (meest recente) all-in inkoopprijs per product, gekeyd op Shopify variant-id én op genormaliseerde naam.
+export async function fetchNicheBayCurrentCosts(maxPages = 30, limit = 100) {
+  type P = { name: string; variantId: string; cleanLast: number; cleanDate: number; anyLast: number; anyDate: number; orders: number };
+  const byVar: Record<string, P> = {};
+  const byName: Record<string, P> = {};
+  const LINE_PRICE_FIELDS = ["currency_price", "presentment_price", "price", "unit_price"];
+  let ordersSeen = 0;
+  const upd = (m: Record<string, P>, key: string, name: string, vid: string, unit: number, single: boolean, when: number) => {
+    const p = m[key] || (m[key] = { name, variantId: vid, cleanLast: 0, cleanDate: 0, anyLast: 0, anyDate: 0, orders: 0 });
+    if (name && !p.name) p.name = name;
+    if (vid && !p.variantId) p.variantId = vid;
+    p.orders++;
+    if (when >= p.anyDate) { p.anyDate = when; p.anyLast = unit; }
+    if (single && when >= p.cleanDate) { p.cleanDate = when; p.cleanLast = unit; }
+  };
+  for (let page = 1; page <= maxPages; page++) {
+    const j = await nbGet(`/orders?page=${page}&limit=${limit}`);
+    const list = extractList(j);
+    if (!Array.isArray(list) || list.length === 0) break;
+    for (const o of list) {
+      ordersSeen++;
+      const orderCost = toNum(pick(o, COST_FIELDS));
+      const lines = findLineItems(o);
+      if (!lines.length || orderCost <= 0) continue;
+      const when = toNum(o.paid_at || o.created_at || 0);
+      const single = lines.length === 1;
+      const weights = lines.map((li: any) => Math.max(1, toNum(pick(li, QTY_FIELDS)) || 1) * (toNum(pick(li, LINE_PRICE_FIELDS)) || 1));
+      const totW = weights.reduce((a, b) => a + b, 0) || lines.length;
+      lines.forEach((li: any, i: number) => {
+        const name = String(pick(li, NAME_FIELDS) || "").trim();
+        const vid = String(pick(li, VARIANT_FIELDS) || "").trim();
+        const qty = Math.max(1, toNum(pick(li, QTY_FIELDS)) || 1);
+        if (!name && !vid) return;
+        const allocated = single ? orderCost : orderCost * (weights[i] / totW);
+        const unit = allocated / qty;
+        if (unit <= 0) return;
+        if (vid) upd(byVar, vid, name, vid, unit, single, when);
+        if (name) upd(byName, nbNormName(name), name, vid, unit, single, when);
+      });
+    }
+    if (list.length < limit) break;
+  }
+  const flat = (p: P) => ({ name: p.name, variantId: p.variantId, cost: Math.round((p.cleanLast || p.anyLast) * 100) / 100, orders: p.orders, basis: p.cleanLast ? "single-item" : "verdeeld" });
+  const outVar: Record<string, any> = {}; for (const [k, v] of Object.entries(byVar)) outVar[k] = flat(v);
+  const outName: Record<string, any> = {}; for (const [k, v] of Object.entries(byName)) outName[k] = flat(v);
+  return { byVariant: outVar, byName: outName, ordersSeen };
+}
