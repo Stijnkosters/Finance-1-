@@ -5,6 +5,7 @@ import { nichebayConfigured, fetchNicheBayCostByOrder } from "@/lib/nichebay";
 import { SHOPS, getShop, shopConfigured, type ShopCfg } from "@/lib/shops";
 import costsDrivemax from "@/data/costs.json";
 import costsHomivo from "@/data/costs-homivo.json";
+import { maybeAutoSyncBing } from "@/lib/bingSync";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -151,6 +152,7 @@ function finalize(byDay: Record<string, Bucket>, adspend: Record<string, number>
 
 export async function GET(req: Request) {
   try {
+    void maybeAutoSyncBing(); // ververst Bing-cache op de achtergrond als 'ie ouder is dan 8u
     const { searchParams } = new URL(req.url);
     const to = searchParams.get("to") || new Date().toISOString().slice(0, 10);
     const defFrom = new Date(); defFrom.setDate(defFrom.getDate() - 30);
