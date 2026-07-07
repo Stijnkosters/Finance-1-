@@ -442,12 +442,16 @@ export default function Dashboard() {
                       <tr>
                         <th>Datum</th><th className="r">Orders</th><th className="r">Omzet</th><th className="r">Refunds</th>
                         <th className="r">COGS</th><th className="r">Fees</th><th className="r">Ad</th>
-                        <th className="r">Gross</th><th className="r">Winst</th><th className="r">ROAS</th>
+                        <th className="r">Gross</th><th className="r">Winst</th><th className="r">ROAS</th><th className="r">Break-even</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {days.length === 0 && <tr><td colSpan={10} className="dim center">Geen orders.</td></tr>}
-                      {days.map((d: any) => (
+                      {days.length === 0 && <tr><td colSpan={11} className="dim center">Geen orders.</td></tr>}
+                      {days.map((d: any) => {
+                        const cm = (d.revenue || 0) - (d.cogs || 0) - (d.fees || 0) - (d.refunds || 0);
+                        const be = cm > 0 ? d.revenue / cm : null;
+                        const roasOk = be != null && d.roas ? d.roas >= be : null;
+                        return (
                         <tr key={d.date}>
                           <td className="nowrap">{ddmmyyyy(d.date)}</td>
                           <td className="r mono">{d.orders}</td>
@@ -458,9 +462,10 @@ export default function Dashboard() {
                           <td className="r mono">{d.adspend ? eur(d.adspend) : "—"}</td>
                           <td className="r mono">{eur(d.grossProfit)}</td>
                           <td className={`r mono strong ${d.totalProfit >= 0 ? "green" : "red"}`}>{eur(d.totalProfit)}</td>
-                          <td className="r mono">{d.roas ? numf(d.roas) : "—"}</td>
+                          <td className={`r mono ${roasOk === null ? "" : roasOk ? "green" : "red"}`}>{d.roas ? numf(d.roas) : "—"}</td>
+                          <td className="r mono dim">{be != null ? numf(be) : "—"}</td>
                         </tr>
-                      ))}
+                      );})}
                     </tbody>
                     {days.length > 0 && (
                       <tfoot>
@@ -474,7 +479,8 @@ export default function Dashboard() {
                           <td className="r mono">{eur(totals.adspend)}</td>
                           <td className="r mono">{eur((totals.revenue || 0) - (totals.cogs || 0))}</td>
                           <td className={`r mono strong ${totals.totalProfit >= 0 ? "green" : "red"}`}>{eur(totals.totalProfit)}</td>
-                          <td></td>
+                          <td className={`r mono strong ${(totals.adspend || 0) > 0 && (totals.roas || 0) >= (totals.breakevenRoas || 0) ? "green" : "red"}`}>{(totals.adspend || 0) > 0 ? numf(totals.roas || 0) : "—"}</td>
+                          <td className="r mono">{(totals.breakevenRoas || 0) > 0 ? numf(totals.breakevenRoas) : "—"}</td>
                         </tr>
                       </tfoot>
                     )}

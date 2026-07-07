@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { computeProductMargins } from "@/lib/productMargins";
+import { computeProductMargins, applyOverrides } from "@/lib/productMargins";
 import { readJson, writeJson, persistenceEnabled } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 let running = false;
-const KEY = "product-margins.json";
+const KEY = "product-margins-v2.json"; // nieuwe key → negeert oude cache, berekent 1x vers
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -21,13 +21,14 @@ export async function GET(req: Request) {
       running = true;
       (async () => { try { const d = await computeProductMargins(); await writeJson(KEY, d); } catch {} finally { running = false; } })();
     }
-    return NextResponse.json({ ...cache, cached: true, ageHours: Math.round(ageH * 10) / 10 });
+    // overrides live toepassen op de gecachte basis-data
+    return NextResponse.json({ ...applyOverrides(cache), cached: true, ageHours: Math.round(ageH * 10) / 10 });
   }
 
   try {
-    const data = await computeProductMargins();
-    if (persistenceEnabled()) { try { await writeJson(KEY, data); } catch {} }
-    return NextResponse.json({ ...data, cached: false });
+    const base = await computeProductMargins();
+    if (persistenceEnabled()) { try { await writeJson(KEY, base); } catch {} }
+    return NextResponse.json({ ...applyOverrides(base), cached: false });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
   }
