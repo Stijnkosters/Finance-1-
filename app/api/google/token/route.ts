@@ -7,8 +7,8 @@ const CLIENT_SECRET = process.env.GOOGLE_ADS_CLIENT_SECRET || "";
 const SCOPE = "https://www.googleapis.com/auth/adwords";
 
 function redirectUri(req: NextRequest) {
-  const url = new URL(req.url);
-  return `${url.origin}/api/google/token`;
+  const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || new URL(req.url).host;
+  return `https://${host}/api/google/token`;
 }
 
 function page(body: string) {
