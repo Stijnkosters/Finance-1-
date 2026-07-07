@@ -1,0 +1,5 @@
+{
+  "_uitleg": "hideContains: producten (naam bevat, kleine letters) die uit de marge-tab verdwijnen. addContains: bedrag dat bij de NicheBay-COGS wordt opgeteld als de naam de sleutel bevat (bijv. voor bulk-ingekochte voorraad waar NicheBay alleen verzending rekent).",
+  "hideContains": ["plugwave - best"],
+  "addContains": { "plugwave": 8.06 }
+}

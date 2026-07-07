@@ -682,6 +682,28 @@ function ProductMargins({ shop }: { shop: string }) {
   const countries = data?.countries || [];
   const cur = rows[0]?.currency || "EUR";
 
+  const exportCsv = () => {
+    const all = (data?.rows || []);
+    const head = ["Land", "Product", "Valuta", "Verkoop", "Inkoop (COGS)", "Fees", "Winst", "Marge %", "Break-even ROAS"];
+    const esc = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const lines = [head.join(";")];
+    for (const r of all) {
+      lines.push([
+        LAND_NAAM[r.country] || r.country,
+        r.product,
+        r.currency,
+        r.verkoop, r.cogs, r.fees, r.winst,
+        r.margePct != null ? r.margePct : "",
+        r.breakevenRoas != null ? r.breakevenRoas : "verlies",
+      ].map(esc).join(";"));
+    }
+    const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `marges-per-product-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="fixed-wrap">
       <div className="fixed-topgrid">
@@ -710,6 +732,7 @@ function ProductMargins({ shop }: { shop: string }) {
           <option value="naam">Sorteer: naam</option>
         </select>
         <button className="clrbtn" onClick={() => load(true)} disabled={loading}>{loading ? "Verversen…" : "Ververs nu"}</button>
+        <button className="clrbtn" onClick={exportCsv} disabled={!data?.rows?.length}>⬇ Exporteer CSV (alle landen)</button>
       </div>
 
       <div className="card"><div className="card-body">
