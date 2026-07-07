@@ -6,9 +6,14 @@ const CLIENT_ID = process.env.GOOGLE_ADS_CLIENT_ID || "";
 const CLIENT_SECRET = process.env.GOOGLE_ADS_CLIENT_SECRET || "";
 const SCOPE = "https://www.googleapis.com/auth/adwords";
 
-function redirectUri(req: NextRequest) {
-  const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || new URL(req.url).host;
-  return `https://${host}/api/google/token`;
+function baseUrl() {
+  // Railway zet RAILWAY_PUBLIC_DOMAIN automatisch; val terug op het bekende domein.
+  const d = process.env.PUBLIC_BASE_URL || process.env.RAILWAY_PUBLIC_DOMAIN || "finance-1-production.up.railway.app";
+  return d.startsWith("http") ? d.replace(/\/$/, "") : `https://${d}`;
+}
+
+function redirectUri(_req: NextRequest) {
+  return `${baseUrl()}/api/google/token`;
 }
 
 function page(body: string) {
@@ -46,9 +51,12 @@ export async function GET(req: NextRequest) {
     auth.searchParams.set("access_type", "offline");
     auth.searchParams.set("prompt", "consent"); // forceert een nieuwe refresh_token
     return page(`<h2>Google Ads opnieuw koppelen</h2>
-      <p>Zorg eerst dat deze redirect-URI in je Google Cloud OAuth-client staat (Google Cloud Console → APIs &amp; Services → Credentials → jouw OAuth 2.0 Client → Authorized redirect URIs):</p>
+      <p><b>Controleer eerst of dit de juiste client is.</b> De app gebruikt deze <code>client_id</code>:</p>
+      <pre>${CLIENT_ID}</pre>
+      <p>Deze <b>moet exact overeenkomen</b> met de OAuth-client waar je de redirect-URI hebt toegevoegd in Google Cloud Console. Klopt dit niet, dan krijg je <code>redirect_uri_mismatch</code> — voeg dan de URI toe aan déze client, óf zet de juiste client_id in Railway.</p>
+      <p>Redirect-URI die de app meestuurt (moet exact in die client staan):</p>
       <pre>${ruri}</pre>
-      <p>Klik daarna op onderstaande knop, log in met het account dat toegang heeft tot je Google Ads, en geef toestemming:</p>
+      <p>Klopt alles? Klik dan hier, log in met het account met toegang tot je Google Ads en geef toestemming:</p>
       <p><a class="btn" href="${auth.toString()}">Google Ads koppelen</a></p>`);
   }
 
