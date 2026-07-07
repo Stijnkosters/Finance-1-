@@ -276,3 +276,73 @@ export async function fetchNicheBayCurrentCosts(maxPages = 30, limit = 100) {
   const outName: Record<string, any> = {}; for (const [k, v] of Object.entries(byName)) outName[k] = flat(v);
   return { byVariant: outVar, byName: outName, ordersSeen };
 }
+
+// ---- Marge per product PER LAND uit orders ----
+// verkoop = meest voorkomende currency_price in dat land (≈ listprijs), cogs = recentste store_pay_fee (incl. tax)
+export async function fetchNicheBayProductCountry(maxPages = 30, limit = 100) {
+  type Agg = {
+    name: string; variantId: string; currency: string;
+    sellCounts: Record<string, number>;
+    cogsCleanLast: number; cogsCleanDate: number; cogsAnyLast: number; cogsAnyDate: number;
+    orders: number;
+  };
+  const map: Record<string, Agg> = {}; // key = `${country}|${prodKey}`
+  const countryOrders: Record<string, number> = {};
+  const LINE_PRICE_FIELDS = ["currency_price", "presentment_price", "price", "unit_price"];
+  let ordersSeen = 0;
+  for (let page = 1; page <= maxPages; page++) {
+    const j = await nbGet(`/orders?page=${page}&limit=${limit}`);
+    const list = extractList(j);
+    if (!Array.isArray(list) || list.length === 0) break;
+    for (const o of list) {
+      ordersSeen++;
+      const orderCost = toNum(pick(o, COST_FIELDS));
+      const lines = findLineItems(o);
+      if (!lines.length || orderCost <= 0) continue;
+      const cc = String(o?.address?.country || o?.country || "??").toUpperCase();
+      const cur = String(o?.currency || o?.store_currency || "EUR").toUpperCase();
+      const when = toNum(o.paid_at || o.created_at || 0);
+      const single = lines.length === 1;
+      countryOrders[cc] = (countryOrders[cc] || 0) + 1;
+      const weights = lines.map((li: any) => Math.max(1, toNum(pick(li, QTY_FIELDS)) || 1) * (toNum(pick(li, LINE_PRICE_FIELDS)) || 1));
+      const totW = weights.reduce((a, b) => a + b, 0) || lines.length;
+      lines.forEach((li: any, i: number) => {
+        const name = String(pick(li, NAME_FIELDS) || "").trim();
+        const vid = String(pick(li, VARIANT_FIELDS) || "").trim();
+        const qty = Math.max(1, toNum(pick(li, QTY_FIELDS)) || 1);
+        if (!name && !vid) return;
+        const prodKey = vid || "n:" + nbNormName(name);
+        const key = `${cc}|${prodKey}`;
+        const a = map[key] || (map[key] = { name: name || vid, variantId: vid, currency: cur, sellCounts: {}, cogsCleanLast: 0, cogsCleanDate: 0, cogsAnyLast: 0, cogsAnyDate: 0, orders: 0 });
+        if (name && !a.name) a.name = name;
+        if (vid && !a.variantId) a.variantId = vid;
+        a.orders++;
+        const sell = toNum(pick(li, LINE_PRICE_FIELDS));
+        if (sell > 0) { const b = sell.toFixed(2); a.sellCounts[b] = (a.sellCounts[b] || 0) + 1; }
+        const cogsUnit = (single ? orderCost : orderCost * (weights[i] / totW)) / qty;
+        if (cogsUnit > 0) {
+          if (when >= a.cogsAnyDate) { a.cogsAnyDate = when; a.cogsAnyLast = cogsUnit; }
+          if (single && when >= a.cogsCleanDate) { a.cogsCleanDate = when; a.cogsCleanLast = cogsUnit; }
+        }
+      });
+    }
+    if (list.length < limit) break;
+  }
+  const mode = (m: Record<string, number>) => {
+    let best = ""; let n = -1;
+    for (const [k, v] of Object.entries(m)) if (v > n) { n = v; best = k; }
+    return best ? Number(best) : 0;
+  };
+  const rows = Object.entries(map).map(([key, a]) => {
+    const cc = key.split("|")[0];
+    return {
+      country: cc, name: a.name, variantId: a.variantId, currency: a.currency,
+      verkoop: Math.round(mode(a.sellCounts) * 100) / 100,
+      cogs: Math.round((a.cogsCleanLast || a.cogsAnyLast) * 100) / 100,
+      basis: a.cogsCleanLast ? "single-item" : "verdeeld",
+      orders: a.orders,
+    };
+  });
+  const countries = Object.entries(countryOrders).map(([code, n]) => ({ code, orders: n })).sort((x, y) => y.orders - x.orders);
+  return { rows, countries, ordersSeen };
+}

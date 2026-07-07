@@ -242,7 +242,7 @@ export default function Dashboard() {
       <main className="main">
         <div className="row-between">
           <h2 className="h2">{tab === "overzicht" ? "Overzicht" : tab === "pl" ? "Dagelijkse P&L" : tab === "uitgaves" ? "Uitgaves" : tab === "vaste" ? "Vaste lasten" : tab === "marges" ? "Marge per product" : tab === "balans" ? "Vermogen" : "Importeren"}</h2>
-          {tab !== "import" && tab !== "uitgaves" && (
+          {tab !== "import" && tab !== "uitgaves" && tab !== "marges" && tab !== "vaste" && (
             <div className="ctrls">
               <div className="seg">
                 {[["dezemaand", "Deze maand"], ["vandaag", "Vandaag"], ["week", "Week"], ["maand", "30d"], ["kwartaal", "90d"], ["jaar", "Dit jaar"]].map(([v, l]) => (
@@ -635,25 +635,36 @@ function FixedCosts({ expenses }: { expenses: any[] }) {
   );
 }
 
+const LAND_NAAM: Record<string, string> = { NL: "Nederland", BE: "België", DE: "Duitsland", FR: "Frankrijk", PL: "Polen", AT: "Oostenrijk", LU: "Luxemburg", ES: "Spanje", IT: "Italië" };
+
 function ProductMargins({ shop }: { shop: string }) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [q, setQ] = useState("");
   const [sort, setSort] = useState("beroas");
+  const [land, setLand] = useState("");
 
   const load = (refresh = false) => {
     setLoading(true); setErr("");
-    fetch(`/api/product-margins?shop=${shop}${refresh ? "&refresh=1" : ""}`)
+    fetch(`/api/product-margins${refresh ? "?refresh=1" : ""}`)
       .then((r) => r.json())
-      .then((j) => { if (j.error) setErr(j.error); else setData(j); })
+      .then((j) => {
+        if (j.error) setErr(j.error);
+        else {
+          setData(j);
+          const cs = j.countries || [];
+          const has = (c: string) => cs.some((x: any) => x.code === c);
+          setLand((prev) => prev || (has("NL") ? "NL" : cs[0]?.code || ""));
+        }
+      })
       .catch((e) => setErr(String(e)))
       .finally(() => setLoading(false));
   };
-  useEffect(() => { load(false); }, [shop]);
+  useEffect(() => { load(false); }, []);
 
   const rows = useMemo(() => {
-    let rs = (data?.rows || []).filter((r: any) => r.cogs != null);
+    let rs = (data?.rows || []).filter((r: any) => r.country === land);
     if (q.trim()) { const s = q.toLowerCase(); rs = rs.filter((r: any) => r.product.toLowerCase().includes(s) || (r.sku || "").toLowerCase().includes(s)); }
     const cmp: any = {
       beroas: (a: any, b: any) => (b.breakevenRoas ?? -1) - (a.breakevenRoas ?? -1),
@@ -663,30 +674,36 @@ function ProductMargins({ shop }: { shop: string }) {
       naam: (a: any, b: any) => a.product.localeCompare(b.product),
     };
     return [...rs].sort(cmp[sort] || cmp.beroas);
-  }, [data, q, sort]);
+  }, [data, q, sort, land]);
 
-  if (loading && !data) return <div className="muted" style={{ padding: 20 }}>Marges laden… (eerste keer duurt even — Shopify + NicheBay worden gecombineerd)</div>;
+  if (loading && !data) return <div className="muted" style={{ padding: 20 }}>Marges laden… (eerste keer duurt even — NicheBay-orders worden doorlopen)</div>;
   if (err) return <div className="card"><div className="card-body"><p className="err">Kon marges niet laden: {err}</p></div></div>;
 
-  const unmatched = (data?.rows || []).filter((r: any) => r.cogs == null).length;
+  const countries = data?.countries || [];
+  const cur = rows[0]?.currency || "EUR";
 
   return (
     <div className="fixed-wrap">
       <div className="fixed-topgrid">
         <div className="fixed-total">
           <span className="muted">Producten met marge</span>
-          <b className="mono" style={{ color: "var(--up)" }}>{data?.matched ?? 0}<span className="per">van {data?.count ?? 0}</span></b>
-          <span className="fixed-year mono">{data?.cached ? `cache ${Math.round((data.ageHours || 0))}u oud` : "vers berekend"} · {unmatched} zonder COGS</span>
+          <b className="mono" style={{ color: "var(--up)" }}>{rows.length}<span className="per">in {LAND_NAAM[land] || land || "—"}</span></b>
+          <span className="fixed-year mono">{data?.cached ? `cache ${Math.round((data.ageHours || 0))}u oud` : "vers berekend"}</span>
         </div>
         <div className="fixed-note muted">
-          Inkoopprijs (COGS) = de actuele all-in prijs uit NicheBay incl. tax/tarief, uit je meest recente order per product. Verkoopprijs uit Shopify. Fees geschat op 1,8% + €0,25. <b>Break-even ROAS</b> = verkoopprijs ÷ winst — hoe lager, hoe meer advertentieruimte; hoog = kwetsbaar. Bovenaan staan de kwetsbaarste producten.
+          Per land: verkoopprijs = wat klanten in dat land betaalden, inkoop (COGS) = de actuele all-in prijs uit NicheBay incl. tax/tarief. Fees geschat op 1,8% + €0,25. <b>Break-even ROAS</b> = verkoop ÷ winst — laag = veel advertentieruimte, hoog = kwetsbaar. Bovenaan de kwetsbaarste producten.
         </div>
       </div>
 
       <div className="fixed-controls">
-        <input className="expsearch" placeholder="Zoek product of SKU…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <div className="seg">
+          {countries.map((c: any) => (
+            <button key={c.code} className={land === c.code ? "on" : ""} onClick={() => setLand(c.code)}>{LAND_NAAM[c.code] || c.code}</button>
+          ))}
+        </div>
+        <input className="expsearch" placeholder="Zoek product…" value={q} onChange={(e) => setQ(e.target.value)} />
         <select value={sort} onChange={(e) => setSort(e.target.value)}>
-          <option value="beroas">Sorteer: break-even ROAS (hoog→laag)</option>
+          <option value="beroas">Sorteer: break-even ROAS</option>
           <option value="winst">Sorteer: winst per stuk</option>
           <option value="marge">Sorteer: marge %</option>
           <option value="cogs">Sorteer: inkoopprijs</option>
@@ -698,10 +715,10 @@ function ProductMargins({ shop }: { shop: string }) {
       <div className="card"><div className="card-body">
         <table className="fixed-table">
           <thead>
-            <tr><th>Product</th><th className="r">Verkoop</th><th className="r">Inkoop</th><th className="r">Fees</th><th className="r">Winst/stuk</th><th className="r">Marge %</th><th className="r">Break-even ROAS</th><th className="r"># orders</th></tr>
+            <tr><th>Product</th><th className="r">Verkoop</th><th className="r">Inkoop</th><th className="r">Fees</th><th className="r">Winst/stuk</th><th className="r">Marge %</th><th className="r">Break-even ROAS</th></tr>
           </thead>
           <tbody>
-            {rows.length === 0 && <tr><td colSpan={8} className="muted">Geen producten gevonden.</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={7} className="muted">Geen producten voor dit land.</td></tr>}
             {rows.map((r: any, i: number) => {
               const be = r.breakevenRoas;
               const beClass = be == null ? "" : be >= 3 ? "beroas-bad" : be >= 2 ? "beroas-mid" : "beroas-good";
@@ -714,7 +731,6 @@ function ProductMargins({ shop }: { shop: string }) {
                   <td className="r mono b" style={{ color: r.winst < 0 ? "var(--down)" : "var(--up)" }}>{eur(r.winst)}</td>
                   <td className="r mono">{r.margePct != null ? r.margePct.toFixed(1) + "%" : "—"}</td>
                   <td className={`r mono b ${beClass}`}>{be != null ? be.toFixed(2) : "verlies"}</td>
-                  <td className="r mono muted">{r.orders}</td>
                 </tr>
               );
             })}
