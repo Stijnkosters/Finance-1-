@@ -5,7 +5,7 @@ import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, ReferenceLine, Cell,
 } from "recharts";
-import { TrendingUp, TrendingDown, LayoutDashboard, CalendarDays, Receipt, Wallet, RefreshCw, Upload, Trash2, Repeat, Package } from "lucide-react";
+import { TrendingUp, TrendingDown, LayoutDashboard, CalendarDays, Receipt, Wallet, RefreshCw, Upload, Trash2, Repeat, Package, ShoppingCart } from "lucide-react";
 
 const eur = (n: number) => new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR" }).format(n || 0);
 
@@ -218,6 +218,7 @@ export default function Dashboard() {
         {[
           ["overzicht", "Overzicht", LayoutDashboard],
           ["pl", "Dagelijkse P&L", CalendarDays],
+          ["orders", "Per order", ShoppingCart],
           ["uitgaves", "Uitgaves", Receipt],
           ["vaste", "Vaste lasten", Repeat],
           ["marges", "Marge per product", Package],
@@ -241,7 +242,7 @@ export default function Dashboard() {
 
       <main className="main">
         <div className="row-between">
-          <h2 className="h2">{tab === "overzicht" ? "Overzicht" : tab === "pl" ? "Dagelijkse P&L" : tab === "uitgaves" ? "Uitgaves" : tab === "vaste" ? "Vaste lasten" : tab === "marges" ? "Marge per product" : tab === "balans" ? "Vermogen" : "Importeren"}</h2>
+          <h2 className="h2">{tab === "overzicht" ? "Overzicht" : tab === "pl" ? "Dagelijkse P&L" : tab === "orders" ? "Per order" : tab === "uitgaves" ? "Uitgaves" : tab === "vaste" ? "Vaste lasten" : tab === "marges" ? "Marge per product" : tab === "balans" ? "Vermogen" : "Importeren"}</h2>
           {tab !== "import" && tab !== "uitgaves" && tab !== "marges" && tab !== "vaste" && (
             <div className="ctrls">
               <div className="seg">
@@ -540,6 +541,7 @@ export default function Dashboard() {
         {tab === "balans" && <VermogenPanel />}
         {tab === "vaste" && <FixedCosts expenses={data.expenses || []} />}
         {tab === "marges" && <ProductMargins shop={shop} />}
+        {tab === "orders" && <OrdersTab shop={shop} from={getRange().from} to={getRange().to} />}
 
         {tab === "import" && <ImportPanel onDone={load} onReload={reloadData} cats={(data.categories && data.categories.length) ? data.categories : FALLBACK_CATEGORIES} expenses={data.expenses || []} />}
       </main>
@@ -643,12 +645,85 @@ function FixedCosts({ expenses }: { expenses: any[] }) {
 
 const LAND_NAAM: Record<string, string> = { NL: "Nederland", BE: "België", DE: "Duitsland", FR: "Frankrijk", PL: "Polen", AT: "Oostenrijk", LU: "Luxemburg", ES: "Spanje", IT: "Italië" };
 
+function OrdersTab({ shop, from, to }: { shop: string; from: string; to: string }) {
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+  const [q, setQ] = useState("");
+
+  useEffect(() => {
+    setLoading(true); setErr("");
+    fetch(`/api/orders?shop=${shop}&from=${from}&to=${to}`)
+      .then((r) => r.json())
+      .then((j) => { if (j.error) setErr(j.error); else setData(j); })
+      .catch((e) => setErr(String(e)))
+      .finally(() => setLoading(false));
+  }, [shop, from, to]);
+
+  const rows = useMemo(() => {
+    let rs = data?.rows || [];
+    if (q.trim()) { const s = q.toLowerCase(); rs = rs.filter((r: any) => (r.order + " " + r.items).toLowerCase().includes(s)); }
+    return rs;
+  }, [data, q]);
+
+  if (loading && !data) return <div className="muted" style={{ padding: 20 }}>Orders laden…</div>;
+  if (err) return <div className="card"><div className="card-body"><p className="err">Kon orders niet laden: {err}</p></div></div>;
+  const t = data?.totals || {};
+
+  return (
+    <div className="fixed-wrap">
+      <div className="fixed-controls">
+        <input className="expsearch" placeholder="Zoek ordernr of product…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <span className="muted" style={{ fontSize: 13 }}>{data?.count || 0} orders · {ddmmyyyy(from)} – {ddmmyyyy(to)}</span>
+      </div>
+      <div className="card"><div className="card-body">
+        <div className="table-wrap">
+          <table className="table">
+            <thead><tr>
+              <th>Order</th><th>Datum</th><th>Producten</th><th className="r">Omzet</th><th className="r">Refund</th><th className="r">COGS</th><th className="r">Fees</th><th className="r">Winst</th><th className="r">Marge %</th><th className="r">Break-even</th>
+            </tr></thead>
+            <tbody>
+              {rows.length === 0 && <tr><td colSpan={10} className="dim center">Geen orders.</td></tr>}
+              {rows.map((r: any, i: number) => (
+                <tr key={i}>
+                  <td className="nowrap mono">{r.order}</td>
+                  <td className="nowrap">{ddmmyyyy(r.date)}</td>
+                  <td style={{ maxWidth: 260, fontSize: 12 }} className="dim">{r.items}</td>
+                  <td className="r mono">{eur(r.revenue)}</td>
+                  <td className="r mono dim">{r.refunds ? eur(r.refunds) : "—"}</td>
+                  <td className="r mono">{r.cogs != null ? eur(r.cogs) : "—"}</td>
+                  <td className="r mono dim">{eur(r.fees)}</td>
+                  <td className={`r mono strong ${r.winst >= 0 ? "green" : "red"}`}>{eur(r.winst)}</td>
+                  <td className="r mono">{r.margePct != null ? r.margePct.toFixed(1) + "%" : "—"}</td>
+                  <td className="r mono dim">{r.breakevenRoas != null ? numf(r.breakevenRoas) : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+            {rows.length > 0 && (
+              <tfoot><tr>
+                <td>TOTAAL</td><td>{t.orders}</td><td></td>
+                <td className="r mono">{eur(t.revenue)}</td>
+                <td className="r mono">{eur(t.refunds)}</td>
+                <td className="r mono">{eur(t.cogs)}</td>
+                <td className="r mono">{eur(t.fees)}</td>
+                <td className={`r mono strong ${t.winst >= 0 ? "green" : "red"}`}>{eur(t.winst)}</td>
+                <td className="r mono">{t.revenue > 0 ? ((t.winst / t.revenue) * 100).toFixed(1) + "%" : "—"}</td>
+                <td className="r mono">{t.breakevenRoas != null ? numf(t.breakevenRoas) : "—"}</td>
+              </tr></tfoot>
+            )}
+          </table>
+        </div>
+      </div></div>
+    </div>
+  );
+}
+
 function ProductMargins({ shop }: { shop: string }) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [q, setQ] = useState("");
-  const [sort, setSort] = useState("beroas");
+  const [sort, setSort] = useState("verkocht");
   const [land, setLand] = useState("");
 
   const load = (refresh = false) => {
@@ -673,6 +748,7 @@ function ProductMargins({ shop }: { shop: string }) {
     let rs = (data?.rows || []).filter((r: any) => r.country === land);
     if (q.trim()) { const s = q.toLowerCase(); rs = rs.filter((r: any) => r.product.toLowerCase().includes(s) || (r.sku || "").toLowerCase().includes(s)); }
     const cmp: any = {
+      verkocht: (a: any, b: any) => (b.units ?? 0) - (a.units ?? 0),
       beroas: (a: any, b: any) => (b.breakevenRoas ?? -1) - (a.breakevenRoas ?? -1),
       winst: (a: any, b: any) => (b.winst ?? -1e9) - (a.winst ?? -1e9),
       marge: (a: any, b: any) => (b.margePct ?? -1e9) - (a.margePct ?? -1e9),
@@ -690,13 +766,14 @@ function ProductMargins({ shop }: { shop: string }) {
 
   const exportCsv = () => {
     const all = (data?.rows || []);
-    const head = ["Land", "Product", "Valuta", "Verkoop", "Inkoop (COGS)", "Fees", "Winst", "Marge %", "Break-even ROAS"];
+    const head = ["Land", "Product", "Verkocht", "Valuta", "Verkoop", "Inkoop (COGS)", "Fees", "Winst", "Marge %", "Break-even ROAS"];
     const esc = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
     const lines = [head.join(";")];
     for (const r of all) {
       lines.push([
         LAND_NAAM[r.country] || r.country,
         r.product,
+        r.units,
         r.currency,
         r.verkoop, r.cogs, r.fees, r.winst,
         r.margePct != null ? r.margePct : "",
@@ -719,7 +796,7 @@ function ProductMargins({ shop }: { shop: string }) {
           <span className="fixed-year mono">{data?.cached ? `cache ${Math.round((data.ageHours || 0))}u oud` : "vers berekend"}</span>
         </div>
         <div className="fixed-note muted">
-          Per land: verkoopprijs = wat klanten in dat land betaalden, inkoop (COGS) = de actuele all-in prijs uit NicheBay incl. tax/tarief. Fees geschat op 1,8% + €0,25. <b>Break-even ROAS</b> = verkoop ÷ winst — laag = veel advertentieruimte, hoog = kwetsbaar. Bovenaan de kwetsbaarste producten.
+          Per land: verkoopprijs = wat klanten in dat land betaalden, inkoop (COGS) = de actuele all-in prijs uit NicheBay incl. tax/tarief. Fees geschat op 1,8% + €0,25. <b>Break-even ROAS</b> = verkoop ÷ winst — laag = veel advertentieruimte, hoog = kwetsbaar. Standaard op meest verkocht: bovenaan je bestsellers — hoog volume + dunne marge = beste onderhandelkaart bij je leverancier.
         </div>
       </div>
 
@@ -731,6 +808,7 @@ function ProductMargins({ shop }: { shop: string }) {
         </div>
         <input className="expsearch" placeholder="Zoek product…" value={q} onChange={(e) => setQ(e.target.value)} />
         <select value={sort} onChange={(e) => setSort(e.target.value)}>
+          <option value="verkocht">Sorteer: meest verkocht (bestsellers)</option>
           <option value="beroas">Sorteer: break-even ROAS</option>
           <option value="winst">Sorteer: winst per stuk</option>
           <option value="marge">Sorteer: marge %</option>
@@ -744,16 +822,17 @@ function ProductMargins({ shop }: { shop: string }) {
       <div className="card"><div className="card-body">
         <table className="fixed-table">
           <thead>
-            <tr><th>Product</th><th className="r">Verkoop</th><th className="r">Inkoop</th><th className="r">Fees</th><th className="r">Winst/stuk</th><th className="r">Marge %</th><th className="r">Break-even ROAS</th></tr>
+            <tr><th>Product</th><th className="r">Verkocht</th><th className="r">Verkoop</th><th className="r">Inkoop</th><th className="r">Fees</th><th className="r">Winst/stuk</th><th className="r">Marge %</th><th className="r">Break-even ROAS</th></tr>
           </thead>
           <tbody>
-            {rows.length === 0 && <tr><td colSpan={7} className="muted">Geen producten voor dit land.</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={8} className="muted">Geen producten voor dit land.</td></tr>}
             {rows.map((r: any, i: number) => {
               const be = r.breakevenRoas;
               const beClass = be == null ? "" : be >= 3 ? "beroas-bad" : be >= 2 ? "beroas-mid" : "beroas-good";
               return (
                 <tr key={i}>
                   <td>{r.product}{r.basis === "verdeeld" && <span className="risetag" style={{ color: "var(--muted)" }} title="COGS geschat uit multi-product orders">~</span>}</td>
+                  <td className="r mono b">{r.units}</td>
                   <td className="r mono">{eur(r.verkoop)}</td>
                   <td className="r mono">{eur(r.cogs)}</td>
                   <td className="r mono muted">{eur(r.fees)}</td>

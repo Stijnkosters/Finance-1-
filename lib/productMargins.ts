@@ -12,7 +12,7 @@ export async function computeProductMargins() {
     .filter((r) => r.verkoop > 0 && r.cogs > 0)
     .map((r) => ({
       country: r.country, product: r.name, sku: r.variantId, currency: r.currency,
-      verkoop: r.verkoop, cogs: r.cogs, orders: r.orders, basis: r.basis,
+      verkoop: r.verkoop, cogs: r.cogs, orders: r.orders, units: r.units, basis: r.basis,
     }));
   return { generatedAt: new Date().toISOString(), ordersSeen, countries, count: rows.length, rows };
 }

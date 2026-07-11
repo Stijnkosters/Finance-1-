@@ -284,7 +284,7 @@ export async function fetchNicheBayProductCountry(maxPages = 30, limit = 100) {
     name: string; variantId: string; currency: string;
     sellCounts: Record<string, number>;
     cogsCleanLast: number; cogsCleanDate: number; cogsAnyLast: number; cogsAnyDate: number;
-    orders: number;
+    orders: number; units: number;
   };
   const map: Record<string, Agg> = {}; // key = `${country}|${prodKey}`
   const countryOrders: Record<string, number> = {};
@@ -313,10 +313,11 @@ export async function fetchNicheBayProductCountry(maxPages = 30, limit = 100) {
         if (!name && !vid) return;
         const prodKey = vid || "n:" + nbNormName(name);
         const key = `${cc}|${prodKey}`;
-        const a = map[key] || (map[key] = { name: name || vid, variantId: vid, currency: cur, sellCounts: {}, cogsCleanLast: 0, cogsCleanDate: 0, cogsAnyLast: 0, cogsAnyDate: 0, orders: 0 });
+        const a = map[key] || (map[key] = { name: name || vid, variantId: vid, currency: cur, sellCounts: {}, cogsCleanLast: 0, cogsCleanDate: 0, cogsAnyLast: 0, cogsAnyDate: 0, orders: 0, units: 0 });
         if (name && !a.name) a.name = name;
         if (vid && !a.variantId) a.variantId = vid;
         a.orders++;
+        a.units += qty;
         const sell = toNum(pick(li, LINE_PRICE_FIELDS));
         if (sell > 0) { const b = sell.toFixed(2); a.sellCounts[b] = (a.sellCounts[b] || 0) + 1; }
         const cogsUnit = (single ? orderCost : orderCost * (weights[i] / totW)) / qty;
@@ -340,7 +341,7 @@ export async function fetchNicheBayProductCountry(maxPages = 30, limit = 100) {
       verkoop: Math.round(mode(a.sellCounts) * 100) / 100,
       cogs: Math.round((a.cogsCleanLast || a.cogsAnyLast) * 100) / 100,
       basis: a.cogsCleanLast ? "single-item" : "verdeeld",
-      orders: a.orders,
+      orders: a.orders, units: a.units,
     };
   });
   const countries = Object.entries(countryOrders).map(([code, n]) => ({ code, orders: n })).sort((x, y) => y.orders - x.orders);
