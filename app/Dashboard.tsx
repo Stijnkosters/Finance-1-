@@ -688,7 +688,7 @@ function OrdersTab({ shop, from, to }: { shop: string; from: string; to: string 
                 <tr key={i}>
                   <td className="nowrap mono">{r.order}</td>
                   <td className="nowrap">{ddmmyyyy(r.date)}</td>
-                  <td style={{ maxWidth: 260, fontSize: 12 }} className="dim">{r.items}</td>
+                  <td className="dim" style={{ maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12 }} title={r.items}>{r.items}</td>
                   <td className="r mono">{eur(r.revenue)}</td>
                   <td className="r mono dim">{r.refunds ? eur(r.refunds) : "—"}</td>
                   <td className="r mono">{r.cogs != null ? eur(r.cogs) : "—"}</td>
