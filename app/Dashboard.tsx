@@ -678,7 +678,7 @@ function OrdersTab({ shop, from, to }: { shop: string; from: string; to: string 
       </div>
       <div className="card"><div className="card-body">
         <div className="table-wrap">
-          <table className="table">
+          <table className="table otable">
             <thead><tr>
               <th>Order</th><th>Datum</th><th>Producten</th><th className="r">Omzet</th><th className="r">Refund</th><th className="r">COGS</th><th className="r">Fees</th><th className="r">Winst</th><th className="r">Marge %</th><th className="r">Break-even</th>
             </tr></thead>
@@ -688,7 +688,7 @@ function OrdersTab({ shop, from, to }: { shop: string; from: string; to: string 
                 <tr key={i}>
                   <td className="nowrap mono">{r.order}</td>
                   <td className="nowrap">{ddmmyyyy(r.date)}</td>
-                  <td className="dim" style={{ maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12 }} title={r.items}>{r.items}</td>
+                  <td className="dim" style={{ maxWidth: 170, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12 }} title={r.items}>{r.items}</td>
                   <td className="r mono">{eur(r.revenue)}</td>
                   <td className="r mono dim">{r.refunds ? eur(r.refunds) : "—"}</td>
                   <td className="r mono">{r.cogs != null ? eur(r.cogs) : "—"}</td>

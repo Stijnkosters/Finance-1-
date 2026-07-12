@@ -224,3 +224,7 @@ tr.excl .rowdesc, tr.excl .mono { color: var(--down,#CE2C2C); }
 .beroas-good { color: var(--up); }
 .beroas-mid { color: #B4880B; }
 .beroas-bad { color: var(--down); }
+
+/* Compacte order-tabel zodat alle kolommen (incl. break-even) passen */
+.otable th, .otable td { padding: 8px 9px; font-size: 12.5px; }
+.otable th { font-size: 10.5px; }
