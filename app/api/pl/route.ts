@@ -17,6 +17,10 @@ const COSTS_BY_KEY: Record<string, Record<string, { title: string; price: number
 const FEE_RATE = parseFloat(process.env.FEE_RATE || "0.018");
 const FEE_FIXED = parseFloat(process.env.FEE_FIXED || "0.25");
 
+// BTW wordt WEL getoond (kolom + per shop), maar NIET van de omzet afgetrokken.
+// Zet op true als je winst en marge ooit ex btw wilt rekenen — dat is de enige plek die je hoeft aan te passen.
+const BTW_UIT_OMZET = false;
+
 function dayKeyAmsterdam(iso: string) {
   const d = new Date(iso);
   return new Intl.DateTimeFormat("en-CA", {
@@ -28,7 +32,9 @@ function round(n: number) {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
-type Bucket = { date: string; orders: number; units: number; revenue: number; refunds: number; cogs: number };
+// revenue = bruto (incl. btw, zoals de klant betaalde). btw = de belasting daarin.
+// Overal waar we winst/marge rekenen gebruiken we revenue - btw.
+type Bucket = { date: string; orders: number; units: number; revenue: number; btw: number; refunds: number; cogs: number };
 
 // Verzamelt de ruwe per-dag cijfers voor één shop (zonder overhead)
 async function gatherShop(shop: ShopCfg, from: string, to: string) {
@@ -52,17 +58,19 @@ async function gatherShop(shop: ShopCfg, from: string, to: string) {
 
   for (const o of orders) {
     const day = dayKeyAmsterdam(o.createdAt);
-    if (!byDay[day]) byDay[day] = { date: day, orders: 0, units: 0, revenue: 0, refunds: 0, cogs: 0 };
+    if (!byDay[day]) byDay[day] = { date: day, orders: 0, units: 0, revenue: 0, btw: 0, refunds: 0, cogs: 0 };
     const bucket = byDay[day];
     bucket.orders += 1;
     const orderRev = parseFloat(o.totalPriceSet?.shopMoney?.amount || o.subtotalPriceSet?.shopMoney?.amount || "0");
+    const orderTax = parseFloat(o.totalTaxSet?.shopMoney?.amount || "0");
     bucket.revenue += orderRev;
+    bucket.btw += orderTax;
     bucket.refunds += parseFloat(o.totalRefundedSet?.shopMoney?.amount || "0");
 
     const custId = o.customer?.id || `${shop.id}:guest:${o.id}`;
     if (!custStats[custId]) custStats[custId] = { orders: 0, revenue: 0 };
     custStats[custId].orders += 1;
-    custStats[custId].revenue += orderRev;
+    custStats[custId].revenue += BTW_UIT_OMZET ? orderRev - orderTax : orderRev;
 
     const orderNo = String(o.name || "").replace(/^#/, "").trim();
     const numId = String(o.id || "").split("/").pop() || "";
@@ -103,39 +111,50 @@ async function gatherShop(shop: ShopCfg, from: string, to: string) {
 // Bouwt days[] + totals[] uit ruwe buckets + adspend + klantstats
 function finalize(byDay: Record<string, Bucket>, adspend: Record<string, number>, custStats: Record<string, { orders: number; revenue: number }>) {
   const days = Object.values(byDay).map((d) => {
+    // fees rekent de PSP over het volledige geïncasseerde bedrag — dus altijd d.revenue
     const fees = d.revenue * FEE_RATE + d.orders * FEE_FIXED;
     const ad = adspend[d.date] || 0;
-    const grossProfit = d.revenue - d.cogs;
-    const totalProfit = d.revenue - d.cogs - ad - d.refunds - fees;
-    const roas = ad > 0 ? d.revenue / ad : 0;
+    // omzet = de basis waarop winst en marge worden gerekend. Standaard: gewoon de volledige omzet.
+    const omzet = BTW_UIT_OMZET ? d.revenue - d.btw : d.revenue;
+    const grossProfit = omzet - d.cogs;
+    const totalProfit = omzet - d.cogs - ad - d.refunds - fees;
+    const roas = ad > 0 ? omzet / ad : 0;
+    const margePct = omzet > 0 ? (totalProfit / omzet) * 100 : 0;
+    const aov = d.orders > 0 ? omzet / d.orders : 0;
     return {
       ...d,
       fees: round(fees), adspend: round(ad),
       grossProfit: round(grossProfit), totalProfit: round(totalProfit),
-      roas: round(roas), revenue: round(d.revenue), refunds: round(d.refunds), cogs: round(d.cogs),
+      roas: round(roas), revenue: round(d.revenue), btw: round(d.btw), omzet: round(omzet),
+      margePct: round(margePct), aov: round(aov),
+      refunds: round(d.refunds), cogs: round(d.cogs),
     };
   }).sort((a, b) => a.date.localeCompare(b.date));
 
   const totals: any = days.reduce((t, d) => {
     t.orders += d.orders; t.units += d.units; t.revenue += d.revenue;
+    t.btw += d.btw; t.omzet += d.omzet;
     t.refunds += d.refunds; t.cogs += d.cogs; t.fees += d.fees;
     t.adspend += d.adspend; t.totalProfit += d.totalProfit;
     return t;
-  }, { orders: 0, units: 0, revenue: 0, refunds: 0, cogs: 0, fees: 0, adspend: 0, totalProfit: 0 });
+  }, { orders: 0, units: 0, revenue: 0, btw: 0, omzet: 0, refunds: 0, cogs: 0, fees: 0, adspend: 0, totalProfit: 0 });
   Object.keys(totals).forEach((k) => (totals[k] = round(totals[k])));
 
-  const contrib = totals.revenue - totals.cogs - totals.fees - totals.refunds;
+  const contrib = totals.omzet - totals.cogs - totals.fees - totals.refunds;
   totals.contributionMargin = round(contrib);
-  totals.marginPct = totals.revenue > 0 ? round((contrib / totals.revenue) * 100) : 0;
-  totals.roas = totals.adspend > 0 ? round(totals.revenue / totals.adspend) : 0;
-  totals.breakevenRoas = contrib > 0 ? round(totals.revenue / contrib) : 0;
+  // marginPct = dekkingsbijdrage vóór ads · netMarginPct = wat er echt onderaan overblijft
+  totals.marginPct = totals.omzet > 0 ? round((contrib / totals.omzet) * 100) : 0;
+  totals.netMarginPct = totals.omzet > 0 ? round((totals.totalProfit / totals.omzet) * 100) : 0;
+  totals.btwPct = totals.omzet > 0 ? round((totals.btw / totals.omzet) * 100) : 0;
+  totals.roas = totals.adspend > 0 ? round(totals.omzet / totals.adspend) : 0;
+  totals.breakevenRoas = contrib > 0 ? round(totals.omzet / contrib) : 0;
 
   const O = totals.orders || 0;
-  totals.aov = O > 0 ? round(totals.revenue / O) : 0;
+  totals.aov = O > 0 ? round(totals.omzet / O) : 0;
   totals.profitPerOrder = O > 0 ? round(totals.totalProfit / O) : 0;
   totals.cacPerOrder = O > 0 ? round(totals.adspend / O) : 0;
   totals.maxCpa = O > 0 ? round(contrib / O) : 0;
-  totals.refundRate = totals.revenue > 0 ? round((totals.refunds / totals.revenue) * 100) : 0;
+  totals.refundRate = totals.omzet > 0 ? round((totals.refunds / totals.omzet) * 100) : 0;
 
   const custIds = Object.keys(custStats);
   const uniqueCustomers = custIds.length;
@@ -143,9 +162,9 @@ function finalize(byDay: Record<string, Bucket>, adspend: Record<string, number>
   totals.uniqueCustomers = uniqueCustomers;
   totals.repeatRate = uniqueCustomers > 0 ? round((repeatCustomers / uniqueCustomers) * 100) : 0;
   totals.ordersPerCustomer = uniqueCustomers > 0 ? round(O / uniqueCustomers) : 0;
-  totals.revenuePerCustomer = uniqueCustomers > 0 ? round(totals.revenue / uniqueCustomers) : 0;
-  const marginRatio = totals.revenue > 0 ? contrib / totals.revenue : 0;
-  totals.ltv = uniqueCustomers > 0 ? round((totals.revenue / uniqueCustomers) * marginRatio) : 0;
+  totals.revenuePerCustomer = uniqueCustomers > 0 ? round(totals.omzet / uniqueCustomers) : 0;
+  const marginRatio = totals.omzet > 0 ? contrib / totals.omzet : 0;
+  totals.ltv = uniqueCustomers > 0 ? round((totals.omzet / uniqueCustomers) * marginRatio) : 0;
 
   return { days, totals };
 }
@@ -185,9 +204,9 @@ export async function GET(req: Request) {
     for (const shop of targets) {
       const g = await gatherShop(shop, from, to);
       for (const [d, b] of Object.entries(g.byDay)) {
-        if (!mergedByDay[d]) mergedByDay[d] = { date: d, orders: 0, units: 0, revenue: 0, refunds: 0, cogs: 0 };
+        if (!mergedByDay[d]) mergedByDay[d] = { date: d, orders: 0, units: 0, revenue: 0, btw: 0, refunds: 0, cogs: 0 };
         const t = mergedByDay[d];
-        t.orders += b.orders; t.units += b.units; t.revenue += b.revenue; t.refunds += b.refunds; t.cogs += b.cogs;
+        t.orders += b.orders; t.units += b.units; t.revenue += b.revenue; t.btw += b.btw; t.refunds += b.refunds; t.cogs += b.cogs;
       }
       for (const [d, v] of Object.entries(g.adspend)) mergedAd[d] = (mergedAd[d] || 0) + v;
       for (const [k, v] of Object.entries(g.custStats)) {

@@ -345,7 +345,7 @@ export default function Dashboard() {
                 </section>
 
                 <div className="kpis">
-                  <Kpi label="Omzet" value={eur(totals.revenue || 0)} />
+                  <Kpi label="Omzet" value={eur(totals.omzet || 0)} sub={`waarvan ${eur(totals.btw || 0)} btw`} />
                   <Kpi label={`COGS${pl.cogsSource === "nichebay" ? " · NicheBay" : " · handmatig"}`} value={eur(totals.cogs || 0)} tone="down" />
                   <Kpi
                     label={`Ad spend${pl.adSource && pl.adSource !== "manual" ? ` · ${pl.adSource}` : ""}`}
@@ -355,7 +355,7 @@ export default function Dashboard() {
                   <Kpi label="P&L winst" value={eur(totals.totalProfit || 0)} tone={(totals.totalProfit || 0) >= 0 ? "up" : "down"} />
                   <Kpi label="Netto na overhead" value={eur(netTotal)} tone={netTotal >= 0 ? "up" : "down"} />
                   <Kpi label="Orders / units" value={`${totals.orders || 0} / ${totals.units || 0}`} />
-                  <Kpi label="AOV (gem. orderwaarde)" value={eur(totals.aov || 0)} sub={`${numf(totals.maxCpa || 0, 2)} max CPA`} />
+                  <Kpi label="AOV (gem. orderwaarde)" value={eur(totals.aov || 0)} sub={`max CPA ${eur(totals.maxCpa || 0)}`} />
                   <Kpi label="Winst / order" value={eur(totals.profitPerOrder || 0)} tone={(totals.profitPerOrder || 0) >= 0 ? "up" : "down"} sub={`${eur(totals.cacPerOrder || 0)} ad/order`} />
                   <Kpi
                     label="ROAS (deze periode)"
@@ -436,58 +436,105 @@ export default function Dashboard() {
             )}
 
             {tab === "pl" && (
-              <Card title="Dagelijkse P&L" subtitle={`${days.length} dagen · COGS automatisch gematcht`}>
-                <div className="table-wrap">
-                  <table className="table">
-                    <thead>
-                      <tr>
-                        <th>Datum</th><th className="r">Orders</th><th className="r">Omzet</th><th className="r">Refunds</th>
-                        <th className="r">COGS</th><th className="r">Fees</th><th className="r">Ad</th>
-                        <th className="r">Gross</th><th className="r">Winst</th><th className="r">ROAS</th><th className="r">Break-even</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {days.length === 0 && <tr><td colSpan={11} className="dim center">Geen orders.</td></tr>}
-                      {days.map((d: any) => {
-                        const cm = (d.revenue || 0) - (d.cogs || 0) - (d.fees || 0) - (d.refunds || 0);
-                        const be = cm > 0 ? d.revenue / cm : null;
-                        const roasOk = be != null && d.roas ? d.roas >= be : null;
-                        return (
-                        <tr key={d.date}>
-                          <td className="nowrap">{ddmmyyyy(d.date)}</td>
-                          <td className="r mono">{d.orders}</td>
-                          <td className="r mono">{eur(d.revenue)}</td>
-                          <td className="r mono dim">{d.refunds ? eur(d.refunds) : "—"}</td>
-                          <td className="r mono">{eur(d.cogs)}</td>
-                          <td className="r mono dim">{eur(d.fees)}</td>
-                          <td className="r mono">{d.adspend ? eur(d.adspend) : "—"}</td>
-                          <td className="r mono">{eur(d.grossProfit)}</td>
-                          <td className={`r mono strong ${d.totalProfit >= 0 ? "green" : "red"}`}>{eur(d.totalProfit)}</td>
-                          <td className={`r mono ${roasOk === null ? "" : roasOk ? "green" : "red"}`}>{d.roas ? numf(d.roas) : "—"}</td>
-                          <td className="r mono dim">{be != null ? numf(be) : "—"}</td>
-                        </tr>
-                      );})}
-                    </tbody>
-                    {days.length > 0 && (
-                      <tfoot>
+              <>
+                <Card title="BTW & marge per shop" subtitle={`${ddmmyyyy(pl.range.from)} – ${ddmmyyyy(pl.range.to)}`}>
+                  <div className="table-wrap">
+                    <table className="table">
+                      <thead><tr>
+                        <th>Shop</th><th className="r">Orders</th><th className="r">AOV</th>
+                        <th className="r">Omzet</th><th className="r">BTW</th>
+                        <th className="r">Winst</th><th className="r">Marge %</th>
+                      </tr></thead>
+                      <tbody>
+                        {(pl.perShop || []).map((s: any) => (
+                          <tr key={s.id}>
+                            <td className="strong">{s.name}</td>
+                            <td className="r mono">{s.totals.orders || 0}</td>
+                            <td className="r mono">{eur(s.totals.aov || 0)}</td>
+                            <td className="r mono">{eur(s.totals.omzet || 0)}</td>
+                            <td className="r mono amber">{eur(s.totals.btw || 0)}</td>
+                            <td className={`r mono strong ${(s.totals.totalProfit || 0) >= 0 ? "green" : "red"}`}>{eur(s.totals.totalProfit || 0)}</td>
+                            <td className={`r mono ${(s.totals.netMarginPct || 0) >= 0 ? "green" : "red"}`}>{numf(s.totals.netMarginPct || 0, 1)}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot><tr>
+                        <td>TOTAAL</td>
+                        <td className="r mono">{totals.orders || 0}</td>
+                        <td className="r mono">{eur(totals.aov || 0)}</td>
+                        <td className="r mono">{eur(totals.omzet || 0)}</td>
+                        <td className="r mono amber">{eur(totals.btw || 0)}</td>
+                        <td className={`r mono strong ${(totals.totalProfit || 0) >= 0 ? "green" : "red"}`}>{eur(totals.totalProfit || 0)}</td>
+                        <td className={`r mono strong ${(totals.netMarginPct || 0) >= 0 ? "green" : "red"}`}>{numf(totals.netMarginPct || 0, 1)}%</td>
+                      </tr></tfoot>
+                    </table>
+                  </div>
+                  <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>
+                    BTW is hier puur informatief — het wordt niet van je omzet of winst afgetrokken. Handig om te zien wat je opzij moet zetten; je werkelijke aangifte valt lager uit omdat je voorbelasting op inkoop, ads en kosten terugkrijgt. Marge % is netto: winst ná COGS, fees, refunds én ads, gedeeld door omzet. Kies hierboven Drivemax, Homivo of Totaal om te wisselen.
+                  </p>
+                </Card>
+
+                <Card title="Dagelijkse P&L" subtitle={`${days.length} dagen · btw informatief, niet van de winst af`}>
+                  <div className="table-wrap">
+                    <table className="table">
+                      <thead>
                         <tr>
-                          <td>TOTAAL</td>
-                          <td className="r mono">{totals.orders}</td>
-                          <td className="r mono">{eur(totals.revenue)}</td>
-                          <td className="r mono">{eur(totals.refunds)}</td>
-                          <td className="r mono">{eur(totals.cogs)}</td>
-                          <td className="r mono">{eur(totals.fees)}</td>
-                          <td className="r mono">{eur(totals.adspend)}</td>
-                          <td className="r mono">{eur((totals.revenue || 0) - (totals.cogs || 0))}</td>
-                          <td className={`r mono strong ${totals.totalProfit >= 0 ? "green" : "red"}`}>{eur(totals.totalProfit)}</td>
-                          <td className={`r mono strong ${(totals.adspend || 0) > 0 && (totals.roas || 0) >= (totals.breakevenRoas || 0) ? "green" : "red"}`}>{(totals.adspend || 0) > 0 ? numf(totals.roas || 0) : "—"}</td>
-                          <td className="r mono">{(totals.breakevenRoas || 0) > 0 ? numf(totals.breakevenRoas) : "—"}</td>
+                          <th>Datum</th><th className="r">Orders</th><th className="r">AOV</th>
+                          <th className="r">Omzet</th><th className="r">BTW</th><th className="r">Refunds</th>
+                          <th className="r">COGS</th><th className="r">Fees</th><th className="r">Ad</th>
+                          <th className="r">Gross</th><th className="r">Winst</th><th className="r">Marge %</th>
+                          <th className="r">ROAS</th><th className="r">Break-even</th>
                         </tr>
-                      </tfoot>
-                    )}
-                  </table>
-                </div>
-              </Card>
+                      </thead>
+                      <tbody>
+                        {days.length === 0 && <tr><td colSpan={14} className="dim center">Geen orders.</td></tr>}
+                        {days.map((d: any) => {
+                          const cm = (d.omzet || 0) - (d.cogs || 0) - (d.fees || 0) - (d.refunds || 0);
+                          const be = cm > 0 ? d.revenue / cm : null;
+                          const roasOk = be != null && d.roas ? d.roas >= be : null;
+                          return (
+                          <tr key={d.date}>
+                            <td className="nowrap">{ddmmyyyy(d.date)}</td>
+                            <td className="r mono">{d.orders}</td>
+                            <td className="r mono">{d.orders ? eur(d.aov) : "—"}</td>
+                            <td className="r mono">{eur(d.omzet)}</td>
+                            <td className="r mono amber">{d.btw ? eur(d.btw) : "—"}</td>
+                            <td className="r mono dim">{d.refunds ? eur(d.refunds) : "—"}</td>
+                            <td className="r mono">{eur(d.cogs)}</td>
+                            <td className="r mono dim">{eur(d.fees)}</td>
+                            <td className="r mono">{d.adspend ? eur(d.adspend) : "—"}</td>
+                            <td className="r mono">{eur(d.grossProfit)}</td>
+                            <td className={`r mono strong ${d.totalProfit >= 0 ? "green" : "red"}`}>{eur(d.totalProfit)}</td>
+                            <td className={`r mono ${d.margePct >= 0 ? "green" : "red"}`}>{d.omzet ? `${numf(d.margePct, 1)}%` : "—"}</td>
+                            <td className={`r mono ${roasOk === null ? "" : roasOk ? "green" : "red"}`}>{d.roas ? numf(d.roas) : "—"}</td>
+                            <td className="r mono dim">{be != null ? numf(be) : "—"}</td>
+                          </tr>
+                        );})}
+                      </tbody>
+                      {days.length > 0 && (
+                        <tfoot>
+                          <tr>
+                            <td>TOTAAL</td>
+                            <td className="r mono">{totals.orders}</td>
+                            <td className="r mono">{eur(totals.aov || 0)}</td>
+                            <td className="r mono">{eur(totals.omzet || 0)}</td>
+                            <td className="r mono amber">{eur(totals.btw || 0)}</td>
+                            <td className="r mono">{eur(totals.refunds)}</td>
+                            <td className="r mono">{eur(totals.cogs)}</td>
+                            <td className="r mono">{eur(totals.fees)}</td>
+                            <td className="r mono">{eur(totals.adspend)}</td>
+                            <td className="r mono">{eur((totals.omzet || 0) - (totals.cogs || 0))}</td>
+                            <td className={`r mono strong ${totals.totalProfit >= 0 ? "green" : "red"}`}>{eur(totals.totalProfit)}</td>
+                            <td className={`r mono strong ${(totals.netMarginPct || 0) >= 0 ? "green" : "red"}`}>{numf(totals.netMarginPct || 0, 1)}%</td>
+                            <td className={`r mono strong ${(totals.adspend || 0) > 0 && (totals.roas || 0) >= (totals.breakevenRoas || 0) ? "green" : "red"}`}>{(totals.adspend || 0) > 0 ? numf(totals.roas || 0) : "—"}</td>
+                            <td className="r mono">{(totals.breakevenRoas || 0) > 0 ? numf(totals.breakevenRoas) : "—"}</td>
+                          </tr>
+                        </tfoot>
+                      )}
+                    </table>
+                  </div>
+                </Card>
+              </>
             )}
 
             {tab === "uitgaves" && (() => {
