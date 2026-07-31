@@ -436,45 +436,7 @@ export default function Dashboard() {
             )}
 
             {tab === "pl" && (
-              <>
-                <Card title="BTW & marge per shop" subtitle={`${ddmmyyyy(pl.range.from)} – ${ddmmyyyy(pl.range.to)}`}>
-                  <div className="table-wrap">
-                    <table className="table">
-                      <thead><tr>
-                        <th>Shop</th><th className="r">Orders</th><th className="r">AOV</th>
-                        <th className="r">Omzet</th><th className="r">BTW</th>
-                        <th className="r">Winst</th><th className="r">Marge %</th>
-                      </tr></thead>
-                      <tbody>
-                        {(pl.perShop || []).map((s: any) => (
-                          <tr key={s.id}>
-                            <td className="strong">{s.name}</td>
-                            <td className="r mono">{s.totals.orders || 0}</td>
-                            <td className="r mono">{eur(s.totals.aov || 0)}</td>
-                            <td className="r mono">{eur(s.totals.omzet || 0)}</td>
-                            <td className="r mono amber">{eur(s.totals.btw || 0)}</td>
-                            <td className={`r mono strong ${(s.totals.totalProfit || 0) >= 0 ? "green" : "red"}`}>{eur(s.totals.totalProfit || 0)}</td>
-                            <td className={`r mono ${(s.totals.netMarginPct || 0) >= 0 ? "green" : "red"}`}>{numf(s.totals.netMarginPct || 0, 1)}%</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot><tr>
-                        <td>TOTAAL</td>
-                        <td className="r mono">{totals.orders || 0}</td>
-                        <td className="r mono">{eur(totals.aov || 0)}</td>
-                        <td className="r mono">{eur(totals.omzet || 0)}</td>
-                        <td className="r mono amber">{eur(totals.btw || 0)}</td>
-                        <td className={`r mono strong ${(totals.totalProfit || 0) >= 0 ? "green" : "red"}`}>{eur(totals.totalProfit || 0)}</td>
-                        <td className={`r mono strong ${(totals.netMarginPct || 0) >= 0 ? "green" : "red"}`}>{numf(totals.netMarginPct || 0, 1)}%</td>
-                      </tr></tfoot>
-                    </table>
-                  </div>
-                  <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>
-                    BTW is hier puur informatief — het wordt niet van je omzet of winst afgetrokken. Handig om te zien wat je opzij moet zetten; je werkelijke aangifte valt lager uit omdat je voorbelasting op inkoop, ads en kosten terugkrijgt. Marge % is netto: winst ná COGS, fees, refunds én ads, gedeeld door omzet. Kies hierboven Drivemax, Homivo of Totaal om te wisselen.
-                  </p>
-                </Card>
-
-                <Card title="Dagelijkse P&L" subtitle={`${days.length} dagen · btw informatief, niet van de winst af`}>
+              <Card title="Dagelijkse P&L" subtitle={`${days.length} dagen · btw informatief, niet van de winst af`}>
                   <div className="table-wrap">
                     <table className="table">
                       <thead>
@@ -534,7 +496,6 @@ export default function Dashboard() {
                     </table>
                   </div>
                 </Card>
-              </>
             )}
 
             {tab === "uitgaves" && (() => {
