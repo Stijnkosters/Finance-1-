@@ -5,7 +5,7 @@ import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, ReferenceLine, Cell,
 } from "recharts";
-import { TrendingUp, TrendingDown, LayoutDashboard, CalendarDays, Receipt, Wallet, RefreshCw, Upload, Trash2, Repeat, Package, ShoppingCart } from "lucide-react";
+import { TrendingUp, TrendingDown, LayoutDashboard, CalendarDays, Receipt, Wallet, RefreshCw, Upload, Trash2, Repeat, Package, ShoppingCart, LogOut } from "lucide-react";
 
 const eur = (n: number) => new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR" }).format(n || 0);
 
@@ -207,11 +207,23 @@ export default function Dashboard() {
             <div className="sub">Auto-COGS uit Shopify-orders</div>
           </div>
         </div>
-        <button className="seg" onClick={load} title="Verversen" style={{ cursor: "pointer" }}>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 13px" }}>
-            <RefreshCw size={14} /> Verversen
-          </span>
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="seg" onClick={load} title="Verversen" style={{ cursor: "pointer" }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 13px" }}>
+              <RefreshCw size={14} /> Verversen
+            </span>
+          </button>
+          <button
+            className="seg"
+            onClick={async () => { await fetch("/api/login", { method: "DELETE" }); window.location.href = "/login"; }}
+            title="Uitloggen"
+            style={{ cursor: "pointer" }}
+          >
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 13px" }}>
+              <LogOut size={14} /> Uitloggen
+            </span>
+          </button>
+        </div>
       </header>
 
       <nav className="nav">

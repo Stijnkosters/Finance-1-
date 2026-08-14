@@ -39,9 +39,23 @@ git push -u origin main
    - `SHOPIFY_ADMIN_TOKEN` = je `shpat_...` token
    - `SHOPIFY_API_VERSION` = `2026-01`
    - `FEE_RATE` = `0.018` · `FEE_FIXED` = `0.25`
+   - `APP_PASSWORD` = het wachtwoord waarmee je inlogt (zie hieronder)
 3. **Deploy**. Klaar — open de URL en je P&L staat er live.
 
 > Belangrijk: zet je token alleen in Vercel env vars, **nooit** in de code of in GitHub.
+
+## Login met wachtwoord
+De hele app (dashboard én API's) zit achter één wachtwoord.
+- Op **Railway**: open je service → tab **Variables** → **New Variable** → `APP_PASSWORD` = het wachtwoord dat je wilt gebruiken → Railway redeployt automatisch.
+- Open de app → je komt op `/login`, vul het wachtwoord in → je blijft **30 dagen** ingelogd (cookie).
+- Rechtsboven in de cockpit zit een **Uitloggen**-knop.
+- Het wachtwoord staat alleen als env var op de server; de cookie bevat het wachtwoord zélf niet, alleen een afgeleide token.
+- Zolang `APP_PASSWORD` **niet** is ingesteld blijft de app open (geen login) — zo sluit je jezelf nooit buiten tijdens de setup.
+
+Wil je lokaal testen? Zet het in `.env.local`:
+```bash
+APP_PASSWORD=kiesietssterks
+```
 
 ## Stap 5 — Inkoopprijzen invullen (de enige handmatige stap)
 Open `data/costs.json` en zet bij elk product je **inkoopprijs** (`cost`) in EUR. Tel er eventueel je inbound shipping per stuk bij op. Commit + push → Vercel deployt automatisch opnieuw.
