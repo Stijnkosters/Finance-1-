@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, ReferenceLine, Cell,
@@ -98,7 +98,9 @@ export default function Dashboard() {
 
   const getRange = () => (fromInput && toInput ? { from: fromInput, to: toInput } : rangeFor(period));
 
+  const reqRef = useRef(0);
   const load = async () => {
+    const myReq = ++reqRef.current;
     setLoading(true); setError(null);
     try {
       const { from, to } = getRange();
@@ -106,10 +108,12 @@ export default function Dashboard() {
         fetch(`/api/pl?from=${from}&to=${to}&shop=${shop}`).then((r) => r.json()),
         fetch(`/api/data`).then((r) => r.json()),
       ]);
+      // Verouderd antwoord? (shop/periode is intussen gewijzigd) → negeren.
+      if (myReq !== reqRef.current) return;
       if (!r1.ok) throw new Error(r1.error || "P&L ophalen mislukt");
       setPl(r1); setData(r2);
-    } catch (e: any) { setError(e.message); }
-    finally { setLoading(false); }
+    } catch (e: any) { if (myReq === reqRef.current) setError(e.message); }
+    finally { if (myReq === reqRef.current) setLoading(false); }
   };
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [period, fromInput, toInput, shop]);
