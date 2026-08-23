@@ -15,7 +15,9 @@ function fail(origin: string, msg: string) {
 
 export async function GET(req: NextRequest) {
   const p = req.nextUrl.searchParams;
-  const origin = req.nextUrl.origin;
+  const proto = req.headers.get("x-forwarded-proto") || req.nextUrl.protocol.replace(":", "") || "https";
+  const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || req.nextUrl.host;
+  const origin = `${proto}://${host}`;
   const shop = p.get("shop") || "";
   const code = p.get("code") || "";
   const state = p.get("state") || "";

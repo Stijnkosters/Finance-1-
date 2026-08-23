@@ -24,7 +24,11 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const redirectUri = `${req.nextUrl.origin}/api/shopify/callback`;
+  // Achter de Railway-proxy zelf de https-origin bepalen, zodat de redirect_uri
+  // exact matcht met wat in de Shopify-app is geregistreerd.
+  const proto = req.headers.get("x-forwarded-proto") || req.nextUrl.protocol.replace(":", "") || "https";
+  const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || req.nextUrl.host;
+  const redirectUri = `${proto}://${host}/api/shopify/callback`;
   const state = makeState(shopId);
   const authorize = new URL(`https://${shopDomain}/admin/oauth/authorize`);
   authorize.searchParams.set("client_id", clientId());
