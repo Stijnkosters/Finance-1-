@@ -81,6 +81,7 @@ export type AdSpendOpts = {
   bingSheetUrl?: string;
   bingCacheFile?: string;
   useGoogleApi?: boolean;
+  googleCustomerId?: string;
 };
 
 export async function resolveAdSpend(from: string, to: string, opts?: AdSpendOpts) {
@@ -108,8 +109,15 @@ export async function resolveAdSpend(from: string, to: string, opts?: AdSpendOpt
 
   // Google: API (alleen standaard-shop) heeft voorrang, anders de Google-sheet
   let googleMap: Record<string, number> = {};
-  if (useGoogleApi && googleAdsConfigured()) {
-    try { googleMap = await fetchAdSpendByDay(from, to); if (Object.keys(googleMap).length) sources.push("Google Ads"); }
+  const googleCustomerId = opts?.googleCustomerId;
+  // Per-shop (opts): vereis een EXPLICIETE customer-ID, zodat een shop nooit
+  // per ongeluk het standaard-account (Drivemax) leest. Legacy (geen opts):
+  // val terug op het standaard-account.
+  const wantGoogleApi = opts
+    ? useGoogleApi && !!googleCustomerId && googleAdsConfigured(googleCustomerId)
+    : useGoogleApi && googleAdsConfigured();
+  if (wantGoogleApi) {
+    try { googleMap = await fetchAdSpendByDay(from, to, googleCustomerId); if (Object.keys(googleMap).length) sources.push("Google Ads"); }
     catch (e: any) { warning = `Google Ads API faalde (${e.message}).`; }
   }
   if (!Object.keys(googleMap).length && googleSheetUrl) {

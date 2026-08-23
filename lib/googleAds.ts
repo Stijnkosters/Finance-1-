@@ -9,8 +9,10 @@ const CUSTOMER_ID = (process.env.GOOGLE_ADS_CUSTOMER_ID || "").replace(/-/g, "")
 const LOGIN_CUSTOMER_ID = (process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID || "").replace(/-/g, "");
 const VERSION = process.env.GOOGLE_ADS_API_VERSION || "v24";
 
-export function googleAdsConfigured() {
-  return !!(DEV_TOKEN && CLIENT_ID && CLIENT_SECRET && REFRESH_TOKEN && CUSTOMER_ID);
+// customerId optioneel: per-shop account. Zonder → het standaard-account (Drivemax).
+export function googleAdsConfigured(customerId?: string) {
+  const cid = (customerId || "").replace(/-/g, "") || CUSTOMER_ID;
+  return !!(DEV_TOKEN && CLIENT_ID && CLIENT_SECRET && REFRESH_TOKEN && cid);
 }
 
 async function getAccessToken(): Promise<string> {
@@ -30,8 +32,9 @@ async function getAccessToken(): Promise<string> {
   return j.access_token;
 }
 
-// Returns { 'YYYY-MM-DD': spendInEuro }
-export async function fetchAdSpendByDay(from: string, to: string): Promise<Record<string, number>> {
+// Returns { 'YYYY-MM-DD': spendInEuro }. customerId optioneel (per-shop account).
+export async function fetchAdSpendByDay(from: string, to: string, customerId?: string): Promise<Record<string, number>> {
+  const cid = (customerId || "").replace(/-/g, "") || CUSTOMER_ID;
   const token = await getAccessToken();
   const query =
     `SELECT segments.date, metrics.cost_micros FROM customer ` +
@@ -45,7 +48,7 @@ export async function fetchAdSpendByDay(from: string, to: string): Promise<Recor
   if (LOGIN_CUSTOMER_ID) headers["login-customer-id"] = LOGIN_CUSTOMER_ID;
 
   const res = await fetch(
-    `https://googleads.googleapis.com/${VERSION}/customers/${CUSTOMER_ID}/googleAds:searchStream`,
+    `https://googleads.googleapis.com/${VERSION}/customers/${cid}/googleAds:searchStream`,
     { method: "POST", headers, body: JSON.stringify({ query }), cache: "no-store" }
   );
   if (!res.ok) throw new Error(`Google Ads ${res.status}: ${(await res.text()).slice(0, 300)}`);
