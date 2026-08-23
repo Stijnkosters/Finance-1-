@@ -1,24 +1,23 @@
 // Parser voor de dagelijkse Win-Win Fulfillment "INVOICE LIST" (leverancier
 // van o.a. Homivo). Zet de factuurtekst om naar exacte inkoop (COGS) per order.
 //
-// Voorbeeldregel uit de PDF-tekstlaag:
-//   13220236132678 1246 2026/8/4 LumiForge 2 Netherlands 3 36.5
-//   <ordernr>       <txn> <datum>  <product> <qty> <land>  <duty> <prijs €>
+// LET OP: pdf-parse levert de tabel ZONDER spaties tussen de kolommen, bv:
+//   1322023613267812462026/8/4LumiForge2Netherlands336.5
+//   = order 13220236132678 | txn 1246 | datum 2026/8/4 | LumiForge | qty 2 |
+//     Netherlands | duty 3 | prijs 36.5
+// We ankeren daarom op de datum (YYYY/M/D) en op de factuurtotalen.
 //
-// - "Order number" = het Shopify-ordernummer/-id dat de app ook gebruikt om te matchen.
-// - Een order kan over meerdere regels gesplitst zijn (bv. 13243698086214 en
-//   13243698086214_1); die tellen we bij elkaar op tot één ordertotaal.
-// - "Total price (€)" is de inkoopprijs incl. duty die wij aan de leverancier betalen.
+// - "Order number" = het Shopify-ordernummer/-id waarop de app matcht.
+// - Een order kan gesplitst zijn (13243698086214 en 13243698086214_1); die
+//   tellen we bij elkaar op tot één ordertotaal.
+// - "Total price (€)" is de inkoopprijs per orderregel; de som = factuurtotaal.
 
 export type WinWinLine = {
   orderId: string; // basis-ordernummer (zonder _n suffix)
   raw: string; // ordernummer zoals in de PDF (kan _n bevatten)
-  txn: string;
-  date: string;
   product: string;
   qty: number;
   country: string;
-  duty: number;
   price: number;
 };
 
@@ -27,41 +26,81 @@ export type WinWinParsed = {
   invoiceDate: string | null;
   lines: WinWinLine[];
   orders: Record<string, number>; // orderId -> som van price (exacte COGS)
-  orderCount: number; // aantal unieke orders
-  total: number; // som van alle regels (moet ~= factuurtotaal zijn)
+  orderCount: number;
+  total: number;
 };
 
-const numTok = (s: string) => parseFloat(s.replace(",", "."));
+function toNum(s?: string | null): number | null {
+  if (s == null) return null;
+  const n = parseFloat(String(s).replace(/[^\d.]/g, ""));
+  return isFinite(n) ? n : null;
+}
 
 export function parseWinWinInvoice(text: string): WinWinParsed {
-  const invoiceNo = (text.match(/Invoice\s*number:\s*(\S+)/i)?.[1] || null);
-  // Datum staat als "14,August,2026" — geen spaties, dus stopt vanzelf.
-  const invoiceDate = (text.match(/Invoice\s*date:\s*([0-9A-Za-z,]+)/i)?.[1]?.trim() || null);
+  const t = text || "";
 
-  // We matchen elke orderregel met één globale regex i.p.v. per tekstregel.
-  // Zo werkt het ook als de PDF-tekstlaag de regels aan elkaar plakt of juist
-  // opknipt. Velden op volgorde:
-  //   ordernr[_n]  txn  datum(YYYY/M/D)  product…  qty  land  duty  prijs
+  const invoiceNo = t.match(/Invoice\s*number:\s*([A-Za-z0-9]+?)(?=\s|Invoice|$)/i)?.[1] || null;
+  const invoiceDate = t.match(/Invoice\s*date:\s*([0-9A-Za-z,]+)/i)?.[1]?.trim() || null;
+
+  // Totalen (voor validatie + duty/prijs-splitsing)
+  const totalAmount = toNum(t.match(/TOTAL\s*AMOUNT\s*€?\s*([\d.,]+)/i)?.[1]);
+  const totalDuty = toNum(t.match(/TOTAL\s*Duty\s*€?\s*([\d.,]+)/i)?.[1]);
+
+  // Transactienummer-bereik (bv. "#1246 - #1251") om order-id van txn te scheiden.
+  const rangeM = t.match(/#(\d+)\s*[-–]\s*#(\d+)/);
+  const txnLo = rangeM ? parseInt(rangeM[1], 10) : null;
+  const txnHi = rangeM ? parseInt(rangeM[2], 10) : null;
+
+  // Elke datarij, ge-ankerd op de datum. Werkt zowel met als zonder spaties:
+  //   <order+txn (digits/_/spaties)> <datum> <product> <qty> <land> <duty+prijs>
   const rowRe =
-    /(\d{6,}(?:_\d+)?)\s+(\d+)\s+(\d{4}\/\d{1,2}\/\d{1,2})\s+(.+?)\s+(\d+)\s+([A-Za-z][A-Za-z. ]*?)\s+(\d+)\s+(\d+(?:[.,]\d+)?)(?=\s|$)/g;
+    /([\d_ ]+?)(\d{4}\/\d{1,2}\/\d{1,2})\s*([A-Za-z][A-Za-z .\-]*?)\s*(\d+)\s*([A-Za-z][A-Za-z .]*?)\s*(\d+\.\d+)(?=\s|$|\/)/g;
 
-  const lines: WinWinLine[] = [];
-  for (const m of text.matchAll(rowRe)) {
-    const rawOrder = m[1];
-    const price = numTok(m[8]);
-    if (!isFinite(price)) continue;
-    lines.push({
-      orderId: rawOrder.replace(/_\d+$/, ""),
-      raw: rawOrder,
-      txn: m[2],
-      date: m[3],
-      product: m[4].trim(),
-      qty: parseInt(m[5], 10) || 0,
-      country: m[6].trim(),
-      duty: numTok(m[7]) || 0,
-      price,
+  type Raw = { orderId: string; raw: string; product: string; qty: number; country: string; dutyPrice: string };
+  const raws: Raw[] = [];
+
+  for (const m of t.matchAll(rowRe)) {
+    const pre = m[1].replace(/\s+/g, ""); // order-id + txn, zonder spaties
+    const orderRaw = splitOrderId(pre, txnLo, txnHi);
+    if (!orderRaw) continue;
+    raws.push({
+      orderId: orderRaw.replace(/_\d+$/, ""),
+      raw: orderRaw,
+      product: m[3].trim(),
+      qty: parseInt(m[4], 10) || 0,
+      country: m[5].trim(),
+      dutyPrice: m[6],
     });
   }
+
+  // Duty van prijs splitsen. "336.5" = duty 3 + prijs 36.5. Meerdere strategieën;
+  // die met de kleinste afwijking t.o.v. het factuurtotaal wint.
+  const dutyStr =
+    totalDuty != null && raws.length > 0 && Number.isInteger(totalDuty / raws.length) && totalDuty / raws.length > 0
+      ? String(totalDuty / raws.length)
+      : null;
+
+  const strategies: ((dp: string) => number | null)[] = [
+    (dp) => (dutyStr && dp.startsWith(dutyStr) && /^\d+\.\d+$/.test(dp.slice(dutyStr.length)) ? parseFloat(dp.slice(dutyStr.length)) : null),
+    (dp) => { const r = dp.replace(/^\d/, ""); return /^\d+\.\d+$/.test(r) ? parseFloat(r) : null; }, // 1-cijferige duty
+    (dp) => (/^\d+\.\d+$/.test(dp) ? parseFloat(dp) : null), // geen duty
+    (dp) => { const r = dp.replace(/^\d\d/, ""); return /^\d+\.\d+$/.test(r) ? parseFloat(r) : null; }, // 2-cijferige duty
+  ];
+
+  let prices: number[] | null = null;
+  let bestErr = Infinity;
+  for (const strat of strategies) {
+    const cand = raws.map((r) => strat(r.dutyPrice));
+    if (cand.some((p) => p == null || !isFinite(p as number))) continue;
+    const sum = (cand as number[]).reduce((a, b) => a + b, 0);
+    const err = totalAmount != null ? Math.abs(sum - totalAmount) : 0;
+    if (err < bestErr) { bestErr = err; prices = cand as number[]; if (totalAmount == null || err < 0.01) break; }
+  }
+  if (!prices) prices = raws.map((r) => parseFloat(r.dutyPrice) || 0);
+
+  const lines: WinWinLine[] = raws.map((r, i) => ({
+    orderId: r.orderId, raw: r.raw, product: r.product, qty: r.qty, country: r.country, price: round2(prices![i]),
+  }));
 
   const orders: Record<string, number> = {};
   let total = 0;
@@ -70,14 +109,25 @@ export function parseWinWinInvoice(text: string): WinWinParsed {
     total += l.price;
   }
 
-  return {
-    invoiceNo,
-    invoiceDate,
-    lines,
-    orders,
-    orderCount: Object.keys(orders).length,
-    total: round2(total),
-  };
+  return { invoiceNo, invoiceDate, lines, orders, orderCount: Object.keys(orders).length, total: round2(total) };
+}
+
+// Order-id losmaken van het eraan geplakte transactienummer.
+function splitOrderId(pre: string, txnLo: number | null, txnHi: number | null): string | null {
+  if (!/^\d/.test(pre)) return null;
+  // Gesplitste order: alles vóór de underscore is het order-id.
+  if (pre.includes("_")) return pre.split("_")[0];
+  // Anders: strip het achterliggende transactienummer (binnen het bekende bereik).
+  if (txnLo != null && txnHi != null) {
+    for (let k = String(txnHi).length; k >= String(txnLo).length; k--) {
+      const tail = pre.slice(-k);
+      const n = parseInt(tail, 10);
+      if (n >= txnLo && n <= txnHi && pre.length - k >= 8) return pre.slice(0, -k);
+    }
+  }
+  // Fallback: neem aan dat het transactienummer 4 cijfers is.
+  if (pre.length > 12) return pre.slice(0, -4);
+  return pre;
 }
 
 function round2(n: number) {
