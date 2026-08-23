@@ -1107,6 +1107,46 @@ function ImportPanel({ onDone, onReload, cats, expenses }: any) {
     } catch (e: any) { setBankMsg(e.message); } finally { setBankBusy(false); }
   };
   const [source, setSource] = useState("rabobank");
+
+  // --- Win-Win inkoopfactuur (PDF) → exacte COGS per order ---
+  const [invShop, setInvShop] = useState("homivo");
+  const [invBusy, setInvBusy] = useState(false);
+  const [invDrag, setInvDrag] = useState(false);
+  const [invErr, setInvErr] = useState<string | null>(null);
+  const [invRes, setInvRes] = useState<any>(null);
+  const [invStatus, setInvStatus] = useState<any>(null);
+
+  const loadInvStatus = async (s = invShop) => {
+    try {
+      const r = await fetch(`/api/cogs-invoice?shop=${s}`).then((x) => x.json());
+      if (r.ok) setInvStatus(r);
+    } catch {}
+  };
+  useEffect(() => { loadInvStatus(invShop); /* eslint-disable-next-line */ }, [invShop]);
+
+  const uploadInvoice = async (file: File) => {
+    setInvBusy(true); setInvErr(null); setInvRes(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("shop", invShop);
+      const r = await fetch(`/api/cogs-invoice`, { method: "POST", body: fd }).then((x) => x.json());
+      if (!r.ok) throw new Error(r.error || "Upload mislukt");
+      setInvRes(r);
+      await loadInvStatus(invShop);
+      onReload && onReload();
+    } catch (e: any) { setInvErr(e.message); }
+    finally { setInvBusy(false); }
+  };
+
+  const resetInvoices = async () => {
+    if (!confirm(`Alle opgeslagen inkoop-COGS voor ${invShop} wissen?`)) return;
+    setInvBusy(true); setInvErr(null);
+    try {
+      await fetch(`/api/cogs-invoice?shop=${invShop}`, { method: "DELETE" });
+      setInvRes(null); await loadInvStatus(invShop); onReload && onReload();
+    } finally { setInvBusy(false); }
+  };
   const [psel, setPsel] = useState<Set<string>>(new Set());
   const togglePsel = (id: string) => setPsel((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
@@ -1345,6 +1385,103 @@ function ImportPanel({ onDone, onReload, cats, expenses }: any) {
               </details>
             )}
           </>
+        )}
+      </Card>
+
+      <Card title="Inkoopfactuur (Win-Win PDF)" subtitle="exacte COGS per order · dagelijks">
+        <p className="muted" style={{ marginTop: 0 }}>
+          Sleep hier je dagelijkse <b>Win-Win "INVOICE LIST" PDF</b>. De app leest per order de
+          echte inkoopprijs (incl. duty) en gebruikt die als <b>exacte COGS</b> in je P&L — met
+          voorrang op schattingen. Nieuwe facturen vullen aan; bestaande orders worden bijgewerkt.
+        </p>
+        <div className="ctrls" style={{ marginBottom: 12 }}>
+          <span className="dim" style={{ fontSize: 13 }}>Shop:</span>
+          <select className="msel" value={invShop} onChange={(e) => setInvShop(e.target.value)}>
+            <option value="homivo">Homivo</option>
+            <option value="drivemax">Drivemax</option>
+          </select>
+          {invStatus && (
+            <span className="dim" style={{ fontSize: 13 }}>
+              {invStatus.orderCount} orders opgeslagen · {eur(invStatus.totalStored || 0)} totaal
+            </span>
+          )}
+        </div>
+        <label
+          className={`dropzone ${invDrag ? "dragging" : ""}`}
+          onDragOver={(e) => { e.preventDefault(); setInvDrag(true); }}
+          onDragEnter={(e) => { e.preventDefault(); setInvDrag(true); }}
+          onDragLeave={(e) => { e.preventDefault(); setInvDrag(false); }}
+          onDrop={(e) => {
+            e.preventDefault(); setInvDrag(false);
+            const f = e.dataTransfer.files?.[0];
+            if (f && /\.pdf$/i.test(f.name)) uploadInvoice(f);
+            else if (f) setInvErr("Alleen .pdf-bestanden.");
+          }}
+        >
+          <input type="file" accept="application/pdf,.pdf" style={{ display: "none" }}
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadInvoice(f); e.target.value = ""; }} />
+          <Upload size={22} />
+          <span>{invBusy ? "Bezig…" : invDrag ? "Laat los om te lezen" : "Kies of sleep je Win-Win PDF"}</span>
+        </label>
+        {invErr && <div className="banner err" style={{ marginTop: 12 }}>{invErr}</div>}
+        {invRes && (
+          <>
+            <div className="kpis" style={{ marginTop: 14 }}>
+              <Kpi label="Orders in factuur" value={String(invRes.orderCount)} />
+              <Kpi label="Nieuw toegevoegd" value={String(invRes.added)} tone="up" />
+              <Kpi label="Bijgewerkt" value={String(invRes.updated)} />
+              <Kpi label="Factuurtotaal" value={eur(invRes.total || 0)} />
+              <Kpi label="Totaal orders opgeslagen" value={String(invRes.totalStoredOrders)} />
+            </div>
+            {invRes.alreadyUploaded && (
+              <div className="banner warn" style={{ marginTop: 12 }}>
+                Factuur <b>{invRes.invoiceNo}</b> was al eerder geüpload — opnieuw verwerkt (geen dubbele telling, prijzen zijn overschreven).
+              </div>
+            )}
+            {Array.isArray(invRes.preview) && invRes.preview.length > 0 && (
+              <details style={{ marginTop: 12 }}>
+                <summary style={{ cursor: "pointer", fontWeight: 600 }}>Controle: eerste {invRes.preview.length} regels</summary>
+                <div className="table-wrap" style={{ marginTop: 6 }}>
+                  <table className="table">
+                    <thead><tr><th>Order</th><th>Product</th><th className="r">Aantal</th><th className="r">Inkoop</th></tr></thead>
+                    <tbody>
+                      {invRes.preview.map((l: any, i: number) => (
+                        <tr key={i}>
+                          <td className="mono nowrap">{l.order}</td>
+                          <td>{l.product}</td>
+                          <td className="r">{l.qty}</td>
+                          <td className="r mono">{eur(l.price)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            )}
+          </>
+        )}
+        {invStatus && Array.isArray(invStatus.invoices) && invStatus.invoices.length > 0 && (
+          <details style={{ marginTop: 14 }}>
+            <summary style={{ cursor: "pointer", fontWeight: 600 }}>Geüploade facturen ({invStatus.invoices.length})</summary>
+            <div className="table-wrap" style={{ marginTop: 6 }}>
+              <table className="table">
+                <thead><tr><th>Factuur</th><th>Datum</th><th className="r">Orders</th><th className="r">Totaal</th></tr></thead>
+                <tbody>
+                  {invStatus.invoices.map((v: any, i: number) => (
+                    <tr key={i}>
+                      <td className="mono nowrap">{v.invoiceNo || "—"}</td>
+                      <td className="nowrap">{v.invoiceDate || "—"}</td>
+                      <td className="r">{v.orderCount}</td>
+                      <td className="r mono">{eur(v.total || 0)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <button className="bulkclear" style={{ marginTop: 10 }} onClick={resetInvoices} disabled={invBusy}>
+              Alle inkoop-COGS voor {invShop} wissen
+            </button>
+          </details>
         )}
       </Card>
 

@@ -2,6 +2,7 @@ import { fetchOrders } from "@/lib/shopify";
 import { resolveAdSpend } from "@/lib/adspend";
 import { nichebayConfigured, fetchNicheBayCostByOrder } from "@/lib/nichebay";
 import { SHOPS, getShop, shopConfigured, type ShopCfg } from "@/lib/shops";
+import { readJson } from "@/lib/store";
 import costsDrivemax from "@/data/costs.json";
 import costsHomivo from "@/data/costs-homivo.json";
 
@@ -48,7 +49,12 @@ async function gatherShop(shop: ShopCfg, from: string, to: string) {
     catch (e: any) { cogsWarning = `NicheBay-koppeling faalde (${e.message}). Val terug op costs.json.`; }
   }
 
-  let nbMatched = 0, nbZero = 0, ordersNoCost = 0;
+  // Exacte inkoop per order uit geüploade leveranciersfacturen (bv. Win-Win PDF).
+  // Deze heeft voorrang op NicheBay en costs.json: het is de echte betaalde prijs.
+  const invStore = await readJson(`ordercogs-${shop.costsKey}.json`, { orders: {} });
+  const invMap: Record<string, number> = (invStore && invStore.orders) || {};
+
+  let nbMatched = 0, nbZero = 0, ordersNoCost = 0, invMatched = 0;
   const byDay: Record<string, Bucket> = {};
   const unmatched: Record<string, { title: string; units: number }> = {};
   const custStats: Record<string, { orders: number; revenue: number }> = {};
@@ -71,10 +77,16 @@ async function gatherShop(shop: ShopCfg, from: string, to: string) {
 
     const orderNo = String(o.name || "").replace(/^#/, "").trim();
     const numId = String(o.id || "").split("/").pop() || "";
+    const invCost = invMap[numId] ?? invMap[orderNo];
+    const hasInv = invCost != null && invCost > 0;
+    if (hasInv) invMatched += 1;
     const nbCost = nbMap[orderNo] ?? (numId ? nbMap[numId] : undefined);
     const hasNb = nbCost != null && nbCost > 0;
     if (hasNb) nbMatched += 1;
     else if (nbCost != null) nbZero += 1;
+
+    // Order geldt als "gedekt" zodra er een exacte factuurprijs of NicheBay-kost is.
+    const orderCovered = hasInv || hasNb;
 
     let lineCogs = 0;
     let lineCovered = true;
@@ -84,14 +96,19 @@ async function gatherShop(shop: ShopCfg, from: string, to: string) {
       bucket.units += qty;
       const c = vid ? costs[vid] : null;
       if (c) lineCogs += qty * (c.cost || 0);
-      else if (vid && !hasNb) {
+      else if (vid && !orderCovered) {
         lineCovered = false;
         if (!unmatched[vid]) unmatched[vid] = { title: li.title, units: 0 };
         unmatched[vid].units += qty;
       }
     }
-    bucket.cogs += hasNb ? nbCost! : lineCogs;
-    if (!hasNb && !lineCovered) ordersNoCost += 1;
+    // Prioriteit: factuur > NicheBay > costs.json-regels.
+    bucket.cogs += hasInv ? invCost! : hasNb ? nbCost! : lineCogs;
+    if (!orderCovered && !lineCovered) ordersNoCost += 1;
+  }
+
+  if (invMatched > 0) {
+    cogsSource = cogsSource === "nichebay" ? "win-win factuur + nichebay" : "win-win factuur";
   }
 
   const missingCosts = Object.entries(costs).filter(([, c]) => !c.cost).map(([id, c]) => ({ id, title: c.title }));
