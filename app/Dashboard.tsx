@@ -1147,6 +1147,32 @@ function ImportPanel({ onDone, onReload, cats, expenses }: any) {
       setInvRes(null); await loadInvStatus(invShop); onReload && onReload();
     } finally { setInvBusy(false); }
   };
+
+  // --- Shopify-koppeling (OAuth) ---
+  const [connShop, setConnShop] = useState("homivo");
+  const [connStatus, setConnStatus] = useState<any>(null);
+  const [connMsg, setConnMsg] = useState<string | null>(null);
+  const loadConnStatus = async (s = connShop) => {
+    try { const r = await fetch(`/api/shopify/status?shop=${s}`).then((x) => x.json()); if (r.ok) setConnStatus(r); } catch {}
+  };
+  useEffect(() => { loadConnStatus(connShop); /* eslint-disable-next-line */ }, [connShop]);
+  // terugkoppeling na de OAuth-redirect (?shopify_connected / ?shopify_error)
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    if (p.get("shopify_connected")) {
+      setConnMsg(`Shopify gekoppeld voor ${p.get("shopify_connected")}. 🎉`);
+      onReload && onReload();
+      window.history.replaceState({}, "", window.location.pathname);
+    } else if (p.get("shopify_error")) {
+      setConnMsg(`Koppelen mislukt: ${p.get("shopify_error")}`);
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+    /* eslint-disable-next-line */
+  }, []);
+  const disconnectShopify = async () => {
+    if (!confirm(`Shopify-koppeling voor ${connShop} verwijderen?`)) return;
+    try { await fetch(`/api/shopify/status?shop=${connShop}`, { method: "DELETE" }); await loadConnStatus(connShop); onReload && onReload(); } catch {}
+  };
   const [psel, setPsel] = useState<Set<string>>(new Set());
   const togglePsel = (id: string) => setPsel((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
@@ -1303,6 +1329,51 @@ function ImportPanel({ onDone, onReload, cats, expenses }: any) {
             </>
           );
         })()}
+      </Card>
+
+      <Card title="Shopify-koppeling" subtitle="orders & omzet per shop">
+        {connMsg && <div className={`banner ${connMsg.startsWith("Shopify gekoppeld") ? "ok" : "err"}`} style={{ marginBottom: 12 }}>{connMsg}</div>}
+        <p className="muted" style={{ marginTop: 0 }}>
+          Koppel een shop met Shopify om orders en omzet op te halen. Je logt in bij Shopify en geeft
+          leestoegang (orders + producten); de app bewaart de toegang zelf — je hoeft geen token te kopiëren.
+        </p>
+        <div className="ctrls" style={{ marginBottom: 12 }}>
+          <span className="dim" style={{ fontSize: 13 }}>Shop:</span>
+          <select className="msel" value={connShop} onChange={(e) => setConnShop(e.target.value)}>
+            <option value="homivo">Homivo</option>
+            <option value="drivemax">Drivemax</option>
+          </select>
+          {connStatus && (
+            <span className="pill" style={{ background: connStatus.connected ? "var(--up-soft)" : "var(--down-soft)", color: connStatus.connected ? "var(--up)" : "var(--down)" }}>
+              {connStatus.connected ? "✓ gekoppeld" : "niet gekoppeld"}
+            </span>
+          )}
+        </div>
+        {connStatus && !connStatus.oauthConfigured && (
+          <div className="banner warn" style={{ marginBottom: 12 }}>
+            Zet eerst <b>SHOPIFY_CLIENT_ID</b> en <b>SHOPIFY_CLIENT_SECRET</b> als env-variabelen in Railway (uit je Shopify-app).
+          </div>
+        )}
+        {connStatus && connStatus.connected && (
+          <p className="muted" style={{ marginTop: 0 }}>
+            {connStatus.hasEnvToken
+              ? "Gekoppeld via een token in Railway (env)."
+              : <>Gekoppeld via Shopify-login op <b>{connStatus.oauthShop}</b>{connStatus.obtainedAt ? ` · sinds ${ddmmyyyy(String(connStatus.obtainedAt).slice(0, 10))}` : ""}.</>}
+          </p>
+        )}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button
+            className="seg"
+            style={{ cursor: "pointer", padding: "8px 14px", background: "var(--accent)", color: "#fff", border: "none", borderRadius: 9, fontWeight: 600 }}
+            disabled={connStatus && !connStatus.oauthConfigured}
+            onClick={() => { window.location.href = `/api/shopify/connect?shop=${connShop}`; }}
+          >
+            {connStatus?.connected && !connStatus?.hasEnvToken ? "Opnieuw koppelen" : "Koppel met Shopify"}
+          </button>
+          {connStatus && connStatus.hasOAuth && (
+            <button className="bulkclear" onClick={disconnectShopify}>Koppeling verwijderen</button>
+          )}
+        </div>
       </Card>
 
       <Card title="Bankafschrift importeren" subtitle="bank · creditcard · PayPal">

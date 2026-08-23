@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { shopifyGraphQL } from "@/lib/shopify";
-import { getShop, shopConfigured } from "@/lib/shops";
+import { getShop } from "@/lib/shops";
+import { resolveShopifyCfg, shopHasCredentials } from "@/lib/shopifyAuth";
 import costsDrivemax from "@/data/costs.json";
 import costsHomivo from "@/data/costs-homivo.json";
 
@@ -57,9 +58,10 @@ export async function GET(req: Request) {
     const shopParam = searchParams.get("shop") || "drivemax";
 
     const shop = getShop(shopParam);
-    if (!shopConfigured(shop)) {
+    if (!(await shopHasCredentials(shop))) {
       return NextResponse.json({ ok: false, error: `Shop "${shopParam}" niet geconfigureerd.` }, { status: 400 });
     }
+    const shopifyCfg = await resolveShopifyCfg(shop);
     const costs = COSTS_BY_KEY[shop.costsKey] || {};
 
     const q = `created_at:>='${from}T00:00:00Z' created_at:<='${to}T23:59:59Z'`;
@@ -68,7 +70,7 @@ export async function GET(req: Request) {
     const agg = new Map<string, { country: string; variantId: string; title: string; units: number; revenue: number }>();
 
     for (let i = 0; i < 50; i++) {
-      const data = await shopifyGraphQL(ORDERS_Q, { cursor, q }, shop.shopify);
+      const data = await shopifyGraphQL(ORDERS_Q, { cursor, q }, shopifyCfg);
       const conn = data.orders;
       for (const o of conn.nodes) {
         const country = o.shippingAddress?.countryCodeV2 || "??";

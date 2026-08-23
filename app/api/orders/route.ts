@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { fetchOrders } from "@/lib/shopify";
 import { nichebayConfigured, fetchNicheBayCostByOrder } from "@/lib/nichebay";
 import { getShop } from "@/lib/shops";
+import { resolveShopifyCfg } from "@/lib/shopifyAuth";
+import { readJson } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -22,13 +24,17 @@ export async function GET(req: Request) {
     let nbMap: Record<string, number> = {};
     if (nichebayConfigured()) { try { nbMap = (await fetchNicheBayCostByOrder()).map; } catch {} }
 
-    const orders = await fetchOrders(from, to, cfg.shopify);
+    // Exacte inkoop per order uit geüploade leveranciersfacturen (Win-Win PDF).
+    const invMap: Record<string, number> = (await readJson(`ordercogs-${cfg.costsKey}.json`, { orders: {} }))?.orders || {};
+
+    const orders = await fetchOrders(from, to, await resolveShopifyCfg(cfg));
     const rows = orders.map((o: any) => {
       const orderNo = String(o.name || "").replace(/^#/, "").trim();
+      const numIdRaw = String(o.id || "").split("/").pop() || "";
       const numId = orderNo.replace(/\D/g, "");
       const revenue = Number(o.totalPriceSet?.shopMoney?.amount || 0);
       const refunds = Number(o.totalRefundedSet?.shopMoney?.amount || 0);
-      const cogs = nbMap[orderNo] ?? (numId ? nbMap[numId] : undefined) ?? null;
+      const cogs = invMap[numIdRaw] ?? invMap[orderNo] ?? nbMap[orderNo] ?? (numId ? nbMap[numId] : undefined) ?? null;
       const fees = Math.round((revenue * FEE_RATE + FEE_FIXED) * 100) / 100;
       const c = cogs ?? 0;
       const winst = Math.round((revenue - c - fees - refunds) * 100) / 100;

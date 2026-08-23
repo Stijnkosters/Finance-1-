@@ -1,8 +1,9 @@
 import { fetchOrders } from "@/lib/shopify";
 import { resolveAdSpend } from "@/lib/adspend";
 import { nichebayConfigured, fetchNicheBayCostByOrder } from "@/lib/nichebay";
-import { SHOPS, getShop, shopConfigured, type ShopCfg } from "@/lib/shops";
+import { SHOPS, getShop, type ShopCfg } from "@/lib/shops";
 import { readJson } from "@/lib/store";
+import { resolveShopifyCfg, shopHasCredentials } from "@/lib/shopifyAuth";
 import costsDrivemax from "@/data/costs.json";
 import costsHomivo from "@/data/costs-homivo.json";
 
@@ -37,7 +38,8 @@ type Bucket = { date: string; orders: number; units: number; revenue: number; bt
 
 async function gatherShop(shop: ShopCfg, from: string, to: string) {
   const costs = COSTS_BY_KEY[shop.costsKey] || {};
-  const orders = await fetchOrders(from, to, shop.shopify);
+  const shopifyCfg = await resolveShopifyCfg(shop);
+  const orders = await fetchOrders(from, to, shopifyCfg);
   const adRes = await resolveAdSpend(from, to, shop.ads);
   const adspend = adRes.map;
 
@@ -203,13 +205,18 @@ export type PLResult =
 
 /** Berekent de P&L voor één shop of "totaal" (alle geconfigureerde shops). */
 export async function computePL(shopParam: string, from: string, to: string): Promise<PLResult> {
-  const targets: ShopCfg[] =
-    shopParam === "totaal" ? SHOPS.filter(shopConfigured) : [getShop(shopParam)];
+  let targets: ShopCfg[];
+  if (shopParam === "totaal") {
+    const flags = await Promise.all(SHOPS.map((s) => shopHasCredentials(s)));
+    targets = SHOPS.filter((_, i) => flags[i]);
+  } else {
+    targets = [getShop(shopParam)];
+  }
 
-  if (!targets.length || (shopParam !== "totaal" && !shopConfigured(targets[0]))) {
+  if (!targets.length || (shopParam !== "totaal" && !(await shopHasCredentials(targets[0])))) {
     return {
       ok: false,
-      error: `Shop "${shopParam}" heeft nog geen Shopify-credentials. Zet de bijbehorende env-variabelen in Railway.`,
+      error: `Shop "${shopParam}" is nog niet gekoppeld aan Shopify. Koppel 'm via de Importeren-tab (Shopify-koppeling) of zet de env-variabelen in Railway.`,
     };
   }
 
