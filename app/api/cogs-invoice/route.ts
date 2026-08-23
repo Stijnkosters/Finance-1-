@@ -90,13 +90,19 @@ export async function POST(req: Request) {
       store.orders[orderId] = cost;
     }
 
-    store.invoices.push({
+    const logEntry = {
       invoiceNo: inv.invoiceNo,
       invoiceDate: inv.invoiceDate,
       orderCount: inv.orderCount,
       total: inv.total,
       uploadedAt: new Date().toISOString(),
-    });
+    };
+    // Zelfde factuur opnieuw? Bestaande regel bijwerken i.p.v. dubbel loggen.
+    const existingIdx = inv.invoiceNo
+      ? store.invoices.findIndex((x) => x.invoiceNo === inv.invoiceNo)
+      : -1;
+    if (existingIdx >= 0) store.invoices[existingIdx] = logEntry;
+    else store.invoices.push(logEntry);
     // historie beknopt houden
     if (store.invoices.length > 200) store.invoices = store.invoices.slice(-200);
 
