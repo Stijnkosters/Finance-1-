@@ -1124,14 +1124,19 @@ function ImportPanel({ onDone, onReload, cats, expenses }: any) {
   };
   useEffect(() => { loadInvStatus(invShop); /* eslint-disable-next-line */ }, [invShop]);
 
+  const [invDebug, setInvDebug] = useState<any>(null);
   const uploadInvoice = async (file: File) => {
-    setInvBusy(true); setInvErr(null); setInvRes(null);
+    setInvBusy(true); setInvErr(null); setInvRes(null); setInvDebug(null);
     try {
       const fd = new FormData();
       fd.append("file", file);
       fd.append("shop", invShop);
       const r = await fetch(`/api/cogs-invoice`, { method: "POST", body: fd }).then((x) => x.json());
-      if (!r.ok) throw new Error(r.error || "Upload mislukt");
+      if (!r.ok) {
+        setInvErr(r.error || "Upload mislukt");
+        if (r.sample != null) setInvDebug({ sample: r.sample, len: r.textLen });
+        return;
+      }
       setInvRes(r);
       await loadInvStatus(invShop);
       onReload && onReload();
@@ -1495,6 +1500,12 @@ function ImportPanel({ onDone, onReload, cats, expenses }: any) {
           <span>{invBusy ? "Bezig…" : invDrag ? "Laat los om te lezen" : "Kies of sleep je Win-Win PDF"}</span>
         </label>
         {invErr && <div className="banner err" style={{ marginTop: 12 }}>{invErr}</div>}
+        {invDebug && (
+          <details style={{ marginTop: 10 }} open>
+            <summary style={{ cursor: "pointer", fontWeight: 600 }}>Uitgelezen tekst ({invDebug.len} tekens) — voor diagnose</summary>
+            <pre style={{ whiteSpace: "pre-wrap", fontSize: 11, background: "var(--paper)", border: "1px solid var(--line)", borderRadius: 8, padding: 10, marginTop: 6, maxHeight: 300, overflow: "auto" }}>{invDebug.sample || "(leeg)"}</pre>
+          </details>
+        )}
         {invRes && (
           <>
             <div className="kpis" style={{ marginTop: 14 }}>

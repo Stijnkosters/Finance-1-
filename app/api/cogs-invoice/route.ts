@@ -69,7 +69,12 @@ export async function POST(req: Request) {
     const inv = parseWinWinInvoice(text);
     if (!inv.orderCount) {
       return NextResponse.json(
-        { ok: false, error: "Geen orderregels herkend in deze PDF. Is dit een Win-Win 'INVOICE LIST'?" },
+        {
+          ok: false,
+          error: "Geen orderregels herkend in deze PDF. Is dit een Win-Win 'INVOICE LIST'?",
+          textLen: (text || "").length,
+          sample: (text || "").slice(0, 1800),
+        },
         { status: 400 },
       );
     }
