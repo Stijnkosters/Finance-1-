@@ -34,7 +34,7 @@ function round(n: number) {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
-type Bucket = { date: string; orders: number; units: number; revenue: number; btw: number; refunds: number; cogs: number };
+type Bucket = { date: string; orders: number; units: number; revenue: number; btw: number; refunds: number; cogs: number; noCost: number };
 
 async function gatherShop(shop: ShopCfg, from: string, to: string) {
   const costs = COSTS_BY_KEY[shop.costsKey] || {};
@@ -63,7 +63,7 @@ async function gatherShop(shop: ShopCfg, from: string, to: string) {
 
   for (const o of orders) {
     const day = dayKeyAmsterdam(o.createdAt);
-    if (!byDay[day]) byDay[day] = { date: day, orders: 0, units: 0, revenue: 0, btw: 0, refunds: 0, cogs: 0 };
+    if (!byDay[day]) byDay[day] = { date: day, orders: 0, units: 0, revenue: 0, btw: 0, refunds: 0, cogs: 0, noCost: 0 };
     const bucket = byDay[day];
     bucket.orders += 1;
     const orderRev = parseFloat(o.totalPriceSet?.shopMoney?.amount || o.subtotalPriceSet?.shopMoney?.amount || "0");
@@ -106,7 +106,7 @@ async function gatherShop(shop: ShopCfg, from: string, to: string) {
     }
     // Prioriteit: factuur > NicheBay > costs.json-regels.
     bucket.cogs += hasInv ? invCost! : hasNb ? nbCost! : lineCogs;
-    if (!orderCovered && !lineCovered) ordersNoCost += 1;
+    if (!orderCovered && !lineCovered) { ordersNoCost += 1; bucket.noCost += 1; }
   }
 
   if (invMatched > 0) {
@@ -234,9 +234,9 @@ export async function computePL(shopParam: string, from: string, to: string): Pr
   for (const shop of targets) {
     const g = await gatherShop(shop, from, to);
     for (const [d, b] of Object.entries(g.byDay)) {
-      if (!mergedByDay[d]) mergedByDay[d] = { date: d, orders: 0, units: 0, revenue: 0, btw: 0, refunds: 0, cogs: 0 };
+      if (!mergedByDay[d]) mergedByDay[d] = { date: d, orders: 0, units: 0, revenue: 0, btw: 0, refunds: 0, cogs: 0, noCost: 0 };
       const t = mergedByDay[d];
-      t.orders += b.orders; t.units += b.units; t.revenue += b.revenue; t.btw += b.btw; t.refunds += b.refunds; t.cogs += b.cogs;
+      t.orders += b.orders; t.units += b.units; t.revenue += b.revenue; t.btw += b.btw; t.refunds += b.refunds; t.cogs += b.cogs; t.noCost += b.noCost;
     }
     for (const [d, v] of Object.entries(g.adspend)) mergedAd[d] = (mergedAd[d] || 0) + v;
     for (const [k, v] of Object.entries(g.custStats)) {

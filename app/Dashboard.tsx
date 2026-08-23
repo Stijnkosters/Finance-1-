@@ -449,6 +449,15 @@ export default function Dashboard() {
 
             {tab === "pl" && (
               <Card title="Dagelijkse P&L" subtitle={`${days.length} dagen · btw informatief, niet van de winst af`}>
+                  {(() => {
+                    const missDays = days.filter((d: any) => (d.noCost || 0) > 0);
+                    const missOrders = missDays.reduce((a: number, d: any) => a + (d.noCost || 0), 0);
+                    return missDays.length > 0 ? (
+                      <div className="banner warn" style={{ marginBottom: 12 }}>
+                        ⚠ <b>Some cogs are missing.</b> {missOrders} order(s) op {missDays.length} dag(en) hebben nog geen inkoop-COGS — upload de bijbehorende Win-Win factuur (Importeren-tab). Tot die tijd is de winst op die dagen te hoog.
+                      </div>
+                    ) : null;
+                  })()}
                   <div className="table-wrap">
                     <table className="table">
                       <thead>
@@ -474,7 +483,16 @@ export default function Dashboard() {
                             <td className="r mono">{eur(d.omzet)}</td>
                             <td className="r mono amber">{d.btw ? eur(d.btw) : "—"}</td>
                             <td className="r mono dim">{d.refunds ? eur(d.refunds) : "—"}</td>
-                            <td className="r mono">{eur(d.cogs)}</td>
+                            <td className="r mono">
+                              {eur(d.cogs)}
+                              {d.noCost > 0 && (
+                                <span
+                                  className="amber"
+                                  title={`${d.noCost} van ${d.orders} orders heeft nog geen inkoop-COGS (factuur nog niet geüpload). Some cogs are missing.`}
+                                  style={{ marginLeft: 6, cursor: "help", fontSize: 12 }}
+                                >⚠ {d.noCost}</span>
+                              )}
+                            </td>
                             <td className="r mono dim">{eur(d.fees)}</td>
                             <td className="r mono">{d.adspend ? eur(d.adspend) : "—"}</td>
                             <td className="r mono">{eur(d.grossProfit)}</td>
