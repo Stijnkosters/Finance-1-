@@ -6,7 +6,9 @@ import { getShop, type ShopCfg } from "@/lib/shops";
 // offline access token op en bewaren dat op het volume. Dat token werkt in
 // exact dezelfde header (X-Shopify-Access-Token) als een klassieke shpat-token.
 
-export const OAUTH_SCOPES = "read_orders,read_products";
+// read_customers is nodig omdat de orders-query customer.id ophaalt
+// (herhaalklanten, orders-per-klant, LTV).
+export const OAUTH_SCOPES = "read_orders,read_products,read_customers";
 
 export function oauthFile(shopId: string) {
   return `shopify-oauth-${shopId}.json`;
