@@ -53,8 +53,10 @@ export function parseWinWinInvoice(text: string): WinWinParsed {
 
   // Elke datarij, ge-ankerd op de datum. Werkt zowel met als zonder spaties:
   //   <order+txn (digits/_/spaties)> <datum> <product> <qty> <land> <duty+prijs>
+  // Product mag ELK teken bevatten (é, –, &, cijfers…). qty = getal, land = letters,
+  // dutyPrice = duty+prijs aan elkaar (bv. "316.38" = duty 3 + prijs 16.38).
   const rowRe =
-    /([\d_ ]+?)(\d{4}\/\d{1,2}\/\d{1,2})\s*([A-Za-z][A-Za-z .\-]*?)\s*(\d+)\s*([A-Za-z][A-Za-z .]*?)\s*(\d+\.\d+)(?=\s|$|\/)/g;
+    /([\d_ ]+?)(\d{4}\/\d{1,2}\/\d{1,2})(.+?)(\d+)([A-Za-z][A-Za-z ]*?)(\d+\.\d+)(?=\s|$|\/)/g;
 
   type Raw = { orderId: string; raw: string; product: string; qty: number; country: string; dutyPrice: string };
   const raws: Raw[] = [];
@@ -62,7 +64,7 @@ export function parseWinWinInvoice(text: string): WinWinParsed {
   for (const m of t.matchAll(rowRe)) {
     const pre = m[1].replace(/\s+/g, ""); // order-id + txn, zonder spaties
     const orderRaw = splitOrderId(pre, txnLo, txnHi);
-    if (!orderRaw) continue;
+    if (!orderRaw || !/^\d{10,}/.test(orderRaw)) continue; // alleen echte Shopify-order-ids
     raws.push({
       orderId: orderRaw.replace(/_\d+$/, ""),
       raw: orderRaw,
@@ -73,30 +75,28 @@ export function parseWinWinInvoice(text: string): WinWinParsed {
     });
   }
 
-  // Duty van prijs splitsen. "336.5" = duty 3 + prijs 36.5. Meerdere strategieën;
-  // die met de kleinste afwijking t.o.v. het factuurtotaal wint.
-  const dutyStr =
-    totalDuty != null && raws.length > 0 && Number.isInteger(totalDuty / raws.length) && totalDuty / raws.length > 0
-      ? String(totalDuty / raws.length)
-      : null;
+  // Duty van prijs splitsen. De duty is één leidend cijfer (0, 3, …) dat per rij
+  // kan verschillen (bv. €0 voor oude, €3 voor recente orders). Daarom PER RIJ:
+  // strip 1 leidend cijfer; lukt dat niet, val terug op de prijs zoals-ie is.
+  const rowPrice = (dp: string): number => {
+    const s1 = dp.replace(/^\d/, "");
+    if (/^\d+\.\d+$/.test(s1)) return parseFloat(s1); // duty = 1 leidend cijfer
+    if (/^\d+\.\d+$/.test(dp)) return parseFloat(dp); // geen duty-cijfer
+    return parseFloat(dp) || 0;
+  };
+  let prices = raws.map((r) => rowPrice(r.dutyPrice));
 
-  const strategies: ((dp: string) => number | null)[] = [
-    (dp) => (dutyStr && dp.startsWith(dutyStr) && /^\d+\.\d+$/.test(dp.slice(dutyStr.length)) ? parseFloat(dp.slice(dutyStr.length)) : null),
-    (dp) => { const r = dp.replace(/^\d/, ""); return /^\d+\.\d+$/.test(r) ? parseFloat(r) : null; }, // 1-cijferige duty
-    (dp) => (/^\d+\.\d+$/.test(dp) ? parseFloat(dp) : null), // geen duty
-    (dp) => { const r = dp.replace(/^\d\d/, ""); return /^\d+\.\d+$/.test(r) ? parseFloat(r) : null; }, // 2-cijferige duty
-  ];
-
-  let prices: number[] | null = null;
-  let bestErr = Infinity;
-  for (const strat of strategies) {
-    const cand = raws.map((r) => strat(r.dutyPrice));
-    if (cand.some((p) => p == null || !isFinite(p as number))) continue;
-    const sum = (cand as number[]).reduce((a, b) => a + b, 0);
-    const err = totalAmount != null ? Math.abs(sum - totalAmount) : 0;
-    if (err < bestErr) { bestErr = err; prices = cand as number[]; if (totalAmount == null || err < 0.01) break; }
+  // Veiligheid: als het factuurtotaal betrouwbaar is én "geen duty" duidelijk beter
+  // klopt (duty-kolom ontbrak), gebruik dan de onbewerkte prijzen.
+  if (totalAmount != null && raws.length) {
+    const noStrip = raws.map((r) => (/^\d+\.\d+$/.test(r.dutyPrice) ? parseFloat(r.dutyPrice) : NaN));
+    if (noStrip.every((n) => isFinite(n))) {
+      const tol = Math.max(0.05, totalAmount * 0.01);
+      const errStrip = Math.abs(prices.reduce((a, b) => a + b, 0) - totalAmount);
+      const errNo = Math.abs(noStrip.reduce((a, b) => a + b, 0) - totalAmount);
+      if (errNo <= tol && errStrip > tol) prices = noStrip;
+    }
   }
-  if (!prices) prices = raws.map((r) => parseFloat(r.dutyPrice) || 0);
 
   const lines: WinWinLine[] = raws.map((r, i) => ({
     orderId: r.orderId, raw: r.raw, product: r.product, qty: r.qty, country: r.country, price: round2(prices![i]),
