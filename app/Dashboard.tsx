@@ -1148,6 +1148,14 @@ function ImportPanel({ onDone, onReload, cats, expenses }: any) {
 
   const [invDebug, setInvDebug] = useState<any>(null);
   const [invDebugMode, setInvDebugMode] = useState(false);
+  const [matchInfo, setMatchInfo] = useState<any>(null);
+  const runMatch = async () => {
+    setMatchInfo({ loading: true });
+    try {
+      const r = await fetch(`/api/cogs-invoice?shop=${invShop}&match=1`).then((x) => x.json());
+      setMatchInfo(r.match || { error: "geen data" });
+    } catch (e: any) { setMatchInfo({ error: e.message }); }
+  };
   const uploadInvoice = async (file: File) => {
     setInvBusy(true); setInvErr(null); setInvRes(null); setInvDebug(null);
     try {
@@ -1505,7 +1513,34 @@ function ImportPanel({ onDone, onReload, cats, expenses }: any) {
               {invStatus.orderCount} orders opgeslagen · {eur(invStatus.totalStored || 0)} totaal
             </span>
           )}
+          <button className="bulkclear" onClick={runMatch} style={{ marginLeft: "auto" }}>Controleer matching</button>
         </div>
+        {matchInfo && (
+          <div className="banner info" style={{ marginBottom: 12, fontSize: 12.5 }}>
+            {matchInfo.loading ? "Bezig met controleren…" : matchInfo.error ? `Fout: ${matchInfo.error}` : (
+              <>
+                <b>{matchInfo.matched}/{matchInfo.shopOrders}</b> Shopify-orders (laatste 40 dagen) hebben een COGS-match.
+                <div style={{ marginTop: 6 }}><b>Opgeslagen keys (voorbeeld):</b> <span className="mono">{(matchInfo.storedKeys || []).join(", ") || "(leeg!)"}</span></div>
+                <div className="table-wrap" style={{ marginTop: 6 }}>
+                  <table className="table">
+                    <thead><tr><th>Order</th><th>Shopify id (numId)</th><th>Nr</th><th>Match</th><th className="r">COGS</th></tr></thead>
+                    <tbody>
+                      {(matchInfo.sample || []).map((r: any, i: number) => (
+                        <tr key={i}>
+                          <td className="nowrap">{r.name}</td>
+                          <td className="mono nowrap">{r.numId}</td>
+                          <td className="mono">{r.orderNo}</td>
+                          <td><span className={r.match === "GEEN" ? "red" : "green"}>{r.match}</span></td>
+                          <td className="r mono">{r.cogs != null ? eur(r.cogs) : "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </div>
+        )}
         <label
           className={`dropzone ${invDrag ? "dragging" : ""}`}
           onDragOver={(e) => { e.preventDefault(); setInvDrag(true); }}

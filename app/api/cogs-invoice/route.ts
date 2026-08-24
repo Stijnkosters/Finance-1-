@@ -6,6 +6,8 @@ import pdf from "pdf-parse/lib/pdf-parse.js";
 import { parseWinWinInvoice } from "@/lib/winwin";
 import { readJson, writeJson, persistenceEnabled } from "@/lib/store";
 import { getShop } from "@/lib/shops";
+import { fetchOrders } from "@/lib/shopify";
+import { resolveShopifyCfg } from "@/lib/shopifyAuth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,10 +28,43 @@ const emptyStore = (): Store => ({ orders: {}, invoices: [] });
 
 // Huidige stand ophalen (aantal opgeslagen orders + factuurhistorie).
 export async function GET(req: Request) {
-  const shopId = new URL(req.url).searchParams.get("shop") || "homivo";
+  const url = new URL(req.url);
+  const shopId = url.searchParams.get("shop") || "homivo";
   const store: Store = await readJson(fileFor(shopId), emptyStore());
   const orderCount = Object.keys(store.orders || {}).length;
   const totalStored = Object.values(store.orders || {}).reduce((a, b) => a + (b || 0), 0);
+
+  // Match-diagnose: vergelijk de opgeslagen keys met de echte Shopify-order-ids.
+  let match: any = null;
+  if (url.searchParams.get("match")) {
+    try {
+      const shop = getShop(shopId);
+      const cfg = await resolveShopifyCfg(shop);
+      const to = new Date().toISOString().slice(0, 10);
+      const fromD = new Date(); fromD.setDate(fromD.getDate() - 40);
+      const from = fromD.toISOString().slice(0, 10);
+      const invMap = store.orders || {};
+      const orders = await fetchOrders(from, to, cfg);
+      const rows = orders.slice(0, 20).map((o: any) => {
+        const orderNo = String(o.name || "").replace(/^#/, "").trim();
+        const numId = String(o.id || "").split("/").pop() || "";
+        const hit = invMap[numId] != null ? "id" : invMap[orderNo] != null ? "naam" : "GEEN";
+        return { name: o.name, numId, orderNo, match: hit, cogs: invMap[numId] ?? invMap[orderNo] ?? null };
+      });
+      const matched = orders.filter((o: any) => {
+        const orderNo = String(o.name || "").replace(/^#/, "").trim();
+        const numId = String(o.id || "").split("/").pop() || "";
+        return invMap[numId] != null || invMap[orderNo] != null;
+      }).length;
+      match = {
+        shopOrders: orders.length,
+        matched,
+        storedKeys: Object.keys(invMap).slice(0, 15),
+        sample: rows,
+      };
+    } catch (e: any) { match = { error: e.message }; }
+  }
+
   return NextResponse.json({
     ok: true,
     persisted: persistenceEnabled(),
@@ -37,6 +72,7 @@ export async function GET(req: Request) {
     orderCount,
     totalStored: Math.round(totalStored * 100) / 100,
     invoices: (store.invoices || []).slice(-30).reverse(),
+    match,
   });
 }
 
