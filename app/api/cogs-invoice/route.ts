@@ -120,7 +120,7 @@ export async function POST(req: Request) {
         ok: true,
         debug: true,
         textLen: (text || "").length,
-        text: (text || "").slice(0, 6000),
+        text: (text || "").slice(0, 30000),
         orderCount: inv.orderCount,
         total: inv.total,
         invoiceNo: inv.invoiceNo,
