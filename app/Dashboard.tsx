@@ -1520,7 +1520,9 @@ function ImportPanel({ onDone, onReload, cats, expenses }: any) {
             {matchInfo.loading ? "Bezig met controleren…" : matchInfo.error ? `Fout: ${matchInfo.error}` : (
               <>
                 <b>{matchInfo.matched}/{matchInfo.shopOrders}</b> Shopify-orders (laatste 40 dagen) hebben een COGS-match.
-                <div style={{ marginTop: 6 }}><b>Opgeslagen keys (voorbeeld):</b> <span className="mono">{(matchInfo.storedKeys || []).join(", ") || "(leeg!)"}</span></div>
+                <div style={{ marginTop: 6 }}><b>Lange keys (order-ids, {matchInfo.longKeysCount}×):</b> <span className="mono">{(matchInfo.longKeysSample || []).join(", ") || "(GEEN lange keys!)"}</span></div>
+                <div style={{ marginTop: 4 }}><b>Korte keys (nrs):</b> <span className="mono">{(matchInfo.shortKeysSample || []).join(", ")}</span></div>
+                <div style={{ marginTop: 4 }}><b>1e Shopify-numId:</b> <span className="mono">{matchInfo.firstNumId}</span> — opgeslagen? <b className={matchInfo.firstNumIdStored ? "green" : "red"}>{matchInfo.firstNumIdStored ? "JA" : "NEE"}</b></div>
                 <div className="table-wrap" style={{ marginTop: 6 }}>
                   <table className="table">
                     <thead><tr><th>Order</th><th>Shopify id (numId)</th><th>Nr</th><th>Match</th><th className="r">COGS</th></tr></thead>

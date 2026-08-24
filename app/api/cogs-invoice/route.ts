@@ -56,10 +56,20 @@ export async function GET(req: Request) {
         const numId = String(o.id || "").split("/").pop() || "";
         return invMap[numId] != null || invMap[orderNo] != null;
       }).length;
+      const allKeys = Object.keys(invMap);
+      const longKeys = allKeys.filter((k) => k.length >= 10);
+      const shortKeys = allKeys.filter((k) => k.length < 10);
+      // Zit de eerste Shopify-numId ergens (deels) tussen de opgeslagen keys?
+      const firstNum = rows[0]?.numId || "";
       match = {
         shopOrders: orders.length,
         matched,
-        storedKeys: Object.keys(invMap).slice(0, 15),
+        storedTotal: allKeys.length,
+        longKeysCount: longKeys.length,
+        longKeysSample: longKeys.slice(0, 12),
+        shortKeysSample: shortKeys.slice(0, 12),
+        firstNumId: firstNum,
+        firstNumIdStored: invMap[firstNum] != null,
         sample: rows,
       };
     } catch (e: any) { match = { error: e.message }; }
