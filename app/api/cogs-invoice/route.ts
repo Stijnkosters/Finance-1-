@@ -67,6 +67,22 @@ export async function POST(req: Request) {
     }
 
     const inv = parseWinWinInvoice(text);
+
+    // Diagnosemodus: toon wat er is uitgelezen/geparsed zonder op te slaan.
+    if (new URL(req.url).searchParams.get("debug")) {
+      return NextResponse.json({
+        ok: true,
+        debug: true,
+        textLen: (text || "").length,
+        text: (text || "").slice(0, 6000),
+        orderCount: inv.orderCount,
+        total: inv.total,
+        invoiceNo: inv.invoiceNo,
+        orders: Object.entries(inv.orders).slice(0, 40),
+        lines: inv.lines.slice(0, 40).map((l) => ({ order: l.raw, product: l.product, qty: l.qty, price: l.price })),
+      });
+    }
+
     if (!inv.orderCount) {
       return NextResponse.json(
         {

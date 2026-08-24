@@ -1147,13 +1147,15 @@ function ImportPanel({ onDone, onReload, cats, expenses }: any) {
   useEffect(() => { loadInvStatus(invShop); /* eslint-disable-next-line */ }, [invShop]);
 
   const [invDebug, setInvDebug] = useState<any>(null);
+  const [invDebugMode, setInvDebugMode] = useState(false);
   const uploadInvoice = async (file: File) => {
     setInvBusy(true); setInvErr(null); setInvRes(null); setInvDebug(null);
     try {
       const fd = new FormData();
       fd.append("file", file);
       fd.append("shop", invShop);
-      const r = await fetch(`/api/cogs-invoice`, { method: "POST", body: fd }).then((x) => x.json());
+      const r = await fetch(`/api/cogs-invoice${invDebugMode ? "?debug=1" : ""}`, { method: "POST", body: fd }).then((x) => x.json());
+      if (r.debug) { setInvDebug(r); return; }
       if (!r.ok) {
         setInvErr(r.error || "Upload mislukt");
         if (r.sample != null) setInvDebug({ sample: r.sample, len: r.textLen });
@@ -1521,11 +1523,29 @@ function ImportPanel({ onDone, onReload, cats, expenses }: any) {
           <Upload size={22} />
           <span>{invBusy ? "Bezig…" : invDrag ? "Laat los om te lezen" : "Kies of sleep je Win-Win PDF"}</span>
         </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "var(--soft)", marginTop: 8, cursor: "pointer" }}>
+          <input type="checkbox" checked={invDebugMode} onChange={(e) => setInvDebugMode(e.target.checked)} />
+          Diagnosemodus (niet opslaan — toon uitgelezen tekst + herkende orders)
+        </label>
         {invErr && <div className="banner err" style={{ marginTop: 12 }}>{invErr}</div>}
         {invDebug && (
           <details style={{ marginTop: 10 }} open>
-            <summary style={{ cursor: "pointer", fontWeight: 600 }}>Uitgelezen tekst ({invDebug.len} tekens) — voor diagnose</summary>
-            <pre style={{ whiteSpace: "pre-wrap", fontSize: 11, background: "var(--paper)", border: "1px solid var(--line)", borderRadius: 8, padding: 10, marginTop: 6, maxHeight: 300, overflow: "auto" }}>{invDebug.sample || "(leeg)"}</pre>
+            <summary style={{ cursor: "pointer", fontWeight: 600 }}>
+              Diagnose{invDebug.orderCount != null ? ` — ${invDebug.orderCount} orders herkend, ${eur(invDebug.total || 0)}` : ` (${invDebug.len} tekens)`}
+            </summary>
+            {Array.isArray(invDebug.lines) && (
+              <div className="table-wrap" style={{ marginTop: 6 }}>
+                <table className="table">
+                  <thead><tr><th>Order (uit PDF)</th><th>Product</th><th className="r">Aantal</th><th className="r">Prijs</th></tr></thead>
+                  <tbody>
+                    {invDebug.lines.map((l: any, i: number) => (
+                      <tr key={i}><td className="mono nowrap">{l.order}</td><td>{String(l.product).slice(0, 40)}</td><td className="r">{l.qty}</td><td className="r mono">{eur(l.price)}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <pre style={{ whiteSpace: "pre-wrap", fontSize: 10.5, background: "var(--paper)", border: "1px solid var(--line)", borderRadius: 8, padding: 10, marginTop: 6, maxHeight: 320, overflow: "auto" }}>{invDebug.text || invDebug.sample || "(leeg)"}</pre>
           </details>
         )}
         {invRes && (
