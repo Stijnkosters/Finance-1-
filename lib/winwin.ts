@@ -58,16 +58,17 @@ export function parseWinWinInvoice(text: string): WinWinParsed {
   const rowRe =
     /([\d_ ]+?)(\d{4}\/\d{1,2}\/\d{1,2})(.+?)(\d+)([A-Za-z][A-Za-z ]*?)(\d+\.\d+)(?=\s|$|\/)/g;
 
-  type Raw = { orderId: string; raw: string; product: string; qty: number; country: string; dutyPrice: string };
+  type Raw = { orderId: string; txn: string; raw: string; product: string; qty: number; country: string; dutyPrice: string };
   const raws: Raw[] = [];
 
   for (const m of t.matchAll(rowRe)) {
     const pre = m[1].replace(/\s+/g, ""); // order-id + transactienummer, aan elkaar
-    const orderId = orderIdFrom(pre);
-    if (!orderId) continue;
+    const oi = orderIdFrom(pre);
+    if (!oi) continue;
     raws.push({
-      orderId,
-      raw: orderId,
+      orderId: oi.orderId,
+      txn: oi.txn,
+      raw: oi.orderId,
       product: m[3].trim(),
       qty: parseInt(m[4], 10) || 0,
       country: m[5].trim(),
@@ -102,30 +103,48 @@ export function parseWinWinInvoice(text: string): WinWinParsed {
     orderId: r.orderId, raw: r.raw, product: r.product, qty: r.qty, country: r.country, price: round2(prices![i]),
   }));
 
-  // COGS bewaren onder het Shopify order-id (14-cijferig). De P&L matcht daarop.
-  const orders: Record<string, number> = {};
-  let total = 0;
+  // Eén Shopify-order kan over meerdere regels/dozen verstuurd zijn:
+  //  - underscore-splits (…_1, …_2): zelfde order-id;
+  //  - aparte dozen: verschillende order-ids, maar HETZELFDE transactienummer
+  //    (= Shopify-ordernummer #).
+  // We groeperen daarom per transactienummer (of order-id als txn ontbreekt),
+  // tellen de dozen op, en bewaren dat ordertotaal onder ELKE order-id van de
+  // groep én onder het transactienummer. Zo klopt de COGS ongeacht welk nummer
+  // Shopify teruggeeft, en zijn split-orders compleet.
+  const groups = new Map<string, { sum: number; orderIds: Set<string> }>();
   raws.forEach((r, i) => {
-    const price = round2(prices![i]);
-    orders[r.orderId] = round2((orders[r.orderId] || 0) + price);
-    total += price;
+    const key = r.txn || r.orderId;
+    const g = groups.get(key) || { sum: 0, orderIds: new Set<string>() };
+    g.sum = round2(g.sum + round2(prices![i]));
+    g.orderIds.add(r.orderId);
+    groups.set(key, g);
   });
 
-  const uniqueOrders = new Set(raws.map((r) => r.orderId)).size;
-  return { invoiceNo, invoiceDate, lines, orders, orderCount: uniqueOrders, total: round2(total) };
+  const orders: Record<string, number> = {};
+  let total = 0;
+  for (const [key, g] of groups) {
+    total = round2(total + g.sum);
+    for (const oid of g.orderIds) orders[oid] = g.sum;
+    if (/^\d{3,6}$/.test(key)) orders[key] = g.sum; // transactienummer = Shopify #
+  }
+
+  return { invoiceNo, invoiceDate, lines, orders, orderCount: groups.size, total: round2(total) };
 }
 
-// Shopify order-id uit de aan-elkaar-geplakte cijfers halen.
-// Formaat: <order-id (14 cijfers)><transactienummer>, of met split-suffix:
-//   <order-id>_<split><transactienummer>. Shopify-order-ids zijn hier steevast
-// 14 cijfers, dus we nemen simpelweg de eerste 14 cijfers van het order-id-deel.
-// Dat is robuust ongeacht hoe lang het transactienummer is (4, 5, … cijfers).
+// Order-id (14 cijfers) én transactienummer uit de aan-elkaar-geplakte cijfers.
+// Formaat: <order-id (14)><transactienummer>, of split: <order-id>_<n><txn>.
+// Shopify-order-ids zijn hier steevast 14 cijfers → neem de eerste 14; de rest
+// is het transactienummer. Bij underscore-splits laten we txn leeg (die groeperen
+// al op hun gedeelde order-id).
 const SHOPIFY_ID_LEN = 14;
-function orderIdFrom(pre: string): string | null {
+function orderIdFrom(pre: string): { orderId: string; txn: string } | null {
   if (!/^\d/.test(pre)) return null;
-  const base = pre.includes("_") ? pre.split("_")[0] : pre; // deel vóór de underscore
+  const hasU = pre.includes("_");
+  const base = hasU ? pre.split("_")[0] : pre;
   if (base.length < 12) return null; // te kort voor een echt order-id
-  return base.slice(0, SHOPIFY_ID_LEN);
+  const orderId = base.slice(0, SHOPIFY_ID_LEN);
+  const txn = !hasU && pre.length > SHOPIFY_ID_LEN ? pre.slice(SHOPIFY_ID_LEN) : "";
+  return { orderId, txn };
 }
 
 function round2(n: number) {
