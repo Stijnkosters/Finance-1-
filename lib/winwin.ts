@@ -46,22 +46,24 @@ export function parseWinWinInvoice(text: string): WinWinParsed {
   const totalAmount = toNum(t.match(/TOTAL\s*AMOUNT\s*€?\s*([\d.,]+)/i)?.[1]);
   const totalDuty = toNum(t.match(/TOTAL\s*Duty\s*€?\s*([\d.,]+)/i)?.[1]);
 
-  // Transactienummer-bereik (bv. "#1246 - #1251") om order-id van txn te scheiden.
-  const rangeM = t.match(/#(\d+)\s*[-–]\s*#(\d+)/);
-  const txnLo = rangeM ? parseInt(rangeM[1], 10) : null;
-  const txnHi = rangeM ? parseInt(rangeM[2], 10) : null;
+  // pdf-parse breekt soms de prijs af naar een EIGEN regel (los van de order-regel).
+  // We "helen" de tekst: een regel die geen nieuwe order-regel is, plakken we aan
+  // de vorige order-regel — behalve als die al met een decimaal (prijs) eindigt
+  // (dan is het bv. het factuurgroottotaal, dat we willen negeren).
+  const healed = healWrappedRows(t);
 
-  // Elke datarij, ge-ankerd op de datum. Werkt zowel met als zonder spaties:
+  // Elke datarij, ge-ankerd op de datum:
   //   <order+txn (digits/_/spaties)> <datum> <product> <qty> <land> <duty+prijs>
   // Product mag ELK teken bevatten (é, –, &, cijfers…). qty = getal, land = letters,
-  // dutyPrice = duty+prijs aan elkaar (bv. "316.38" = duty 3 + prijs 16.38).
+  // dutyPrice = duty+prijs aan elkaar (bv. "316.38" = duty 3 + prijs 16.38). De prijs
+  // kan ook een geheel getal zijn zonder komma (bv. "319" = duty 3 + prijs 19).
   const rowRe =
-    /([\d_ ]+?)(\d{4}\/\d{1,2}\/\d{1,2})(.+?)(\d+)([A-Za-z][A-Za-z ]*?)(\d+\.\d+)(?=\s|$|\/)/g;
+    /([\d_ ]+?)(\d{4}\/\d{1,2}\/\d{1,2})(.+?)(\d+)([A-Za-z][A-Za-z ]*?)(\d+(?:\.\d+)?)(?=\s|$|\/)/g;
 
   type Raw = { orderId: string; txn: string; raw: string; product: string; qty: number; country: string; dutyPrice: string };
   const raws: Raw[] = [];
 
-  for (const m of t.matchAll(rowRe)) {
+  for (const m of healed.matchAll(rowRe)) {
     const pre = m[1].replace(/\s+/g, ""); // order-id + transactienummer, aan elkaar
     const oi = orderIdFrom(pre);
     if (!oi) continue;
@@ -79,10 +81,12 @@ export function parseWinWinInvoice(text: string): WinWinParsed {
   // Duty van prijs splitsen. De duty is één leidend cijfer (0, 3, …) dat per rij
   // kan verschillen (bv. €0 voor oude, €3 voor recente orders). Daarom PER RIJ:
   // strip 1 leidend cijfer; lukt dat niet, val terug op de prijs zoals-ie is.
+  // Prijs = dutyPrice zonder het leidende duty-cijfer (bv. "320.88" → 20.88,
+  // "319" → 19, "012.92" → 12.92). Prijs mag een geheel getal zijn.
   const rowPrice = (dp: string): number => {
     const s1 = dp.replace(/^\d/, "");
-    if (/^\d+\.\d+$/.test(s1)) return parseFloat(s1); // duty = 1 leidend cijfer
-    if (/^\d+\.\d+$/.test(dp)) return parseFloat(dp); // geen duty-cijfer
+    if (/^\d+(\.\d+)?$/.test(s1)) return parseFloat(s1); // duty = 1 leidend cijfer
+    if (/^\d+(\.\d+)?$/.test(dp)) return parseFloat(dp); // geen duty-cijfer
     return parseFloat(dp) || 0;
   };
   let prices = raws.map((r) => rowPrice(r.dutyPrice));
@@ -90,7 +94,7 @@ export function parseWinWinInvoice(text: string): WinWinParsed {
   // Veiligheid: als het factuurtotaal betrouwbaar is én "geen duty" duidelijk beter
   // klopt (duty-kolom ontbrak), gebruik dan de onbewerkte prijzen.
   if (totalAmount != null && raws.length) {
-    const noStrip = raws.map((r) => (/^\d+\.\d+$/.test(r.dutyPrice) ? parseFloat(r.dutyPrice) : NaN));
+    const noStrip = raws.map((r) => (/^\d+(\.\d+)?$/.test(r.dutyPrice) ? parseFloat(r.dutyPrice) : NaN));
     if (noStrip.every((n) => isFinite(n))) {
       const tol = Math.max(0.05, totalAmount * 0.01);
       const errStrip = Math.abs(prices.reduce((a, b) => a + b, 0) - totalAmount);
@@ -143,8 +147,31 @@ function orderIdFrom(pre: string): { orderId: string; txn: string } | null {
   const base = hasU ? pre.split("_")[0] : pre;
   if (base.length < 12) return null; // te kort voor een echt order-id
   const orderId = base.slice(0, SHOPIFY_ID_LEN);
-  const txn = !hasU && pre.length > SHOPIFY_ID_LEN ? pre.slice(SHOPIFY_ID_LEN) : "";
+  // Transactienummer (= Shopify #). Bij underscore-splits (…_<n><txn>) staat het
+  // ná de underscore; anders direct achter het 14-cijferige order-id.
+  let txn = "";
+  if (hasU) {
+    const after = pre.split("_").slice(1).join("");
+    txn = after.slice(-4); // laatste 4 cijfers = transactienummer
+  } else if (pre.length > SHOPIFY_ID_LEN) {
+    txn = pre.slice(SHOPIFY_ID_LEN);
+  }
   return { orderId, txn };
+}
+
+// pdf-parse zet afgebroken prijzen soms op een eigen regel. We plakken zo'n regel
+// terug aan de order-regel erboven, tenzij die al met een decimale prijs eindigt
+// (dan is het losse getal bv. het factuurgroottotaal en negeren we het).
+function healWrappedRows(text: string): string {
+  const lines = (text || "").split(/\r?\n/);
+  const out: string[] = [];
+  for (const line of lines) {
+    const isRow = /^\d{12,}/.test(line) && /\d{4}\/\d{1,2}\/\d{1,2}/.test(line);
+    if (isRow) out.push(line);
+    else if (out.length && !/\d+\.\d+\s*$/.test(out[out.length - 1])) out[out.length - 1] += line;
+    else out.push(line);
+  }
+  return out.join("\n");
 }
 
 function round2(n: number) {
