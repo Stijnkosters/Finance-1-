@@ -32,9 +32,11 @@ async function getAccessToken(): Promise<string> {
   return j.access_token;
 }
 
-// Returns { 'YYYY-MM-DD': spendInEuro }. customerId optioneel (per-shop account).
-export async function fetchAdSpendByDay(from: string, to: string, customerId?: string): Promise<Record<string, number>> {
+// Returns { 'YYYY-MM-DD': spendInEuro }. customerId + loginCustomerId optioneel
+// (per-shop account + bijbehorende MCC).
+export async function fetchAdSpendByDay(from: string, to: string, customerId?: string, loginCustomerId?: string): Promise<Record<string, number>> {
   const cid = (customerId || "").replace(/-/g, "") || CUSTOMER_ID;
+  const login = (loginCustomerId || "").replace(/-/g, "") || LOGIN_CUSTOMER_ID;
   const token = await getAccessToken();
   const query =
     `SELECT segments.date, metrics.cost_micros FROM customer ` +
@@ -45,7 +47,7 @@ export async function fetchAdSpendByDay(from: string, to: string, customerId?: s
     Authorization: `Bearer ${token}`,
     "developer-token": DEV_TOKEN as string,
   };
-  if (LOGIN_CUSTOMER_ID) headers["login-customer-id"] = LOGIN_CUSTOMER_ID;
+  if (login) headers["login-customer-id"] = login;
 
   const res = await fetch(
     `https://googleads.googleapis.com/${VERSION}/customers/${cid}/googleAds:searchStream`,

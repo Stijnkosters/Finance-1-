@@ -82,6 +82,7 @@ export type AdSpendOpts = {
   bingCacheFile?: string;
   useGoogleApi?: boolean;
   googleCustomerId?: string;
+  googleLoginCustomerId?: string;
 };
 
 export async function resolveAdSpend(from: string, to: string, opts?: AdSpendOpts) {
@@ -117,7 +118,7 @@ export async function resolveAdSpend(from: string, to: string, opts?: AdSpendOpt
     ? useGoogleApi && !!googleCustomerId && googleAdsConfigured(googleCustomerId)
     : useGoogleApi && googleAdsConfigured();
   if (wantGoogleApi) {
-    try { googleMap = await fetchAdSpendByDay(from, to, googleCustomerId); if (Object.keys(googleMap).length) sources.push("Google Ads"); }
+    try { googleMap = await fetchAdSpendByDay(from, to, googleCustomerId, opts?.googleLoginCustomerId); if (Object.keys(googleMap).length) sources.push("Google Ads"); }
     catch (e: any) { warning = `Google Ads API faalde (${e.message}).`; }
   }
   if (!Object.keys(googleMap).length && googleSheetUrl) {

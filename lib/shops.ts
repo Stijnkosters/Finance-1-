@@ -8,6 +8,7 @@ export type ShopCfg = {
     bingCacheFile: string;
     useGoogleApi: boolean;
     googleCustomerId?: string;
+    googleLoginCustomerId?: string;
   };
   costsKey: "drivemax" | "homivo";
   nichebay: boolean;
@@ -44,6 +45,7 @@ export const SHOPS: ShopCfg[] = [
       bingCacheFile: "bingspend-homivo.json",
       useGoogleApi: true,
       googleCustomerId: process.env.HOMIVO_GOOGLE_ADS_CUSTOMER_ID,
+      googleLoginCustomerId: process.env.HOMIVO_GOOGLE_ADS_LOGIN_CUSTOMER_ID,
     },
     costsKey: "homivo",
     nichebay: false,
