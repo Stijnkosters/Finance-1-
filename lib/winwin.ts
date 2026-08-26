@@ -58,17 +58,16 @@ export function parseWinWinInvoice(text: string): WinWinParsed {
   const rowRe =
     /([\d_ ]+?)(\d{4}\/\d{1,2}\/\d{1,2})(.+?)(\d+)([A-Za-z][A-Za-z ]*?)(\d+\.\d+)(?=\s|$|\/)/g;
 
-  type Raw = { orderId: string; txn: string; raw: string; product: string; qty: number; country: string; dutyPrice: string };
+  type Raw = { orderId: string; raw: string; product: string; qty: number; country: string; dutyPrice: string };
   const raws: Raw[] = [];
 
   for (const m of t.matchAll(rowRe)) {
-    const pre = m[1].replace(/\s+/g, ""); // order-id + txn, zonder spaties
-    const split = splitOrderId(pre, txnLo, txnHi);
-    if (!split || !/^\d{10,}/.test(split.orderId)) continue; // alleen echte Shopify-order-ids
+    const pre = m[1].replace(/\s+/g, ""); // order-id + transactienummer, aan elkaar
+    const orderId = orderIdFrom(pre);
+    if (!orderId) continue;
     raws.push({
-      orderId: split.orderId.replace(/_\d+$/, ""),
-      txn: split.txn,
-      raw: split.orderId,
+      orderId,
+      raw: orderId,
       product: m[3].trim(),
       qty: parseInt(m[4], 10) || 0,
       country: m[5].trim(),
@@ -103,15 +102,12 @@ export function parseWinWinInvoice(text: string): WinWinParsed {
     orderId: r.orderId, raw: r.raw, product: r.product, qty: r.qty, country: r.country, price: round2(prices![i]),
   }));
 
-  // We bewaren de COGS onder ZOWEL het lange order-id (Shopify order-id) ALS het
-  // korte transactienummer (Shopify ordernummer #). De P&L matcht op allebei, dus
-  // het maakt niet uit welke Shopify teruggeeft.
+  // COGS bewaren onder het Shopify order-id (14-cijferig). De P&L matcht daarop.
   const orders: Record<string, number> = {};
   let total = 0;
   raws.forEach((r, i) => {
     const price = round2(prices![i]);
     orders[r.orderId] = round2((orders[r.orderId] || 0) + price);
-    if (r.txn && /^\d{3,}$/.test(r.txn)) orders[r.txn] = round2((orders[r.txn] || 0) + price);
     total += price;
   });
 
@@ -119,27 +115,17 @@ export function parseWinWinInvoice(text: string): WinWinParsed {
   return { invoiceNo, invoiceDate, lines, orders, orderCount: uniqueOrders, total: round2(total) };
 }
 
-// Order-id én transactienummer losmaken van de aan-elkaar-geplakte cijfers.
-// Het lange order-id = Shopify order-id; het txn = het korte Shopify-ordernummer.
-function splitOrderId(pre: string, txnLo: number | null, txnHi: number | null): { orderId: string; txn: string } | null {
+// Shopify order-id uit de aan-elkaar-geplakte cijfers halen.
+// Formaat: <order-id (14 cijfers)><transactienummer>, of met split-suffix:
+//   <order-id>_<split><transactienummer>. Shopify-order-ids zijn hier steevast
+// 14 cijfers, dus we nemen simpelweg de eerste 14 cijfers van het order-id-deel.
+// Dat is robuust ongeacht hoe lang het transactienummer is (4, 5, … cijfers).
+const SHOPIFY_ID_LEN = 14;
+function orderIdFrom(pre: string): string | null {
   if (!/^\d/.test(pre)) return null;
-  // Gesplitste order: alles vóór de underscore is het order-id; txn = laatste 4 cijfers.
-  if (pre.includes("_")) {
-    const orderId = pre.split("_")[0];
-    const afterUnderscore = pre.split("_").slice(1).join("");
-    return { orderId, txn: afterUnderscore.slice(-4) };
-  }
-  // Anders: strip het achterliggende transactienummer (binnen het bekende bereik).
-  if (txnLo != null && txnHi != null) {
-    for (let k = String(txnHi).length; k >= String(txnLo).length; k--) {
-      const tail = pre.slice(-k);
-      const n = parseInt(tail, 10);
-      if (n >= txnLo && n <= txnHi && pre.length - k >= 8) return { orderId: pre.slice(0, -k), txn: tail };
-    }
-  }
-  // Fallback: neem aan dat het transactienummer 4 cijfers is.
-  if (pre.length > 12) return { orderId: pre.slice(0, -4), txn: pre.slice(-4) };
-  return { orderId: pre, txn: "" };
+  const base = pre.includes("_") ? pre.split("_")[0] : pre; // deel vóór de underscore
+  if (base.length < 12) return null; // te kort voor een echt order-id
+  return base.slice(0, SHOPIFY_ID_LEN);
 }
 
 function round2(n: number) {
