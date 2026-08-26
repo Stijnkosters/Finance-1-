@@ -40,6 +40,12 @@ async function gatherShop(shop: ShopCfg, from: string, to: string) {
   const costs = COSTS_BY_KEY[shop.costsKey] || {};
   const shopifyCfg = await resolveShopifyCfg(shop);
   const orders = await fetchOrders(from, to, shopifyCfg);
+  // Orders die vóór de periode zijn geplaatst maar ín de periode zijn bijgewerkt
+  // (bv. terugbetaald). Zo tellen refunds op oude orders ook mee.
+  const olderTouched = await fetchOrders(
+    from, to, shopifyCfg,
+    `updated_at:>='${from}T00:00:00Z' updated_at:<='${to}T23:59:59Z' created_at:<'${from}T00:00:00Z'`,
+  );
   const adRes = await resolveAdSpend(from, to, shop.ads);
   const adspend = adRes.map;
 
@@ -70,7 +76,7 @@ async function gatherShop(shop: ShopCfg, from: string, to: string) {
     const orderTax = parseFloat(o.totalTaxSet?.shopMoney?.amount || "0");
     bucket.revenue += orderRev;
     bucket.btw += orderTax;
-    bucket.refunds += parseFloat(o.totalRefundedSet?.shopMoney?.amount || "0");
+    // (refunds worden hieronder apart geboekt op de terugbetaaldatum)
 
     const custId = o.customer?.id || `${shop.id}:guest:${o.id}`;
     if (!custStats[custId]) custStats[custId] = { orders: 0, revenue: 0 };
@@ -111,6 +117,20 @@ async function gatherShop(shop: ShopCfg, from: string, to: string) {
 
   if (invMatched > 0) {
     cogsSource = cogsSource === "nichebay" ? "win-win factuur + nichebay" : "win-win factuur";
+  }
+
+  // Refunds boeken op de DATUM VAN DE TERUGBETALING (niet de orderdatum), voor
+  // alle orders die in de periode zijn geplaatst óf bijgewerkt. Zo tellen ook
+  // terugbetalingen op oudere orders mee, op de juiste dag.
+  for (const o of [...orders, ...olderTouched]) {
+    for (const rf of o.refunds || []) {
+      const amt = parseFloat(rf.totalRefundedSet?.shopMoney?.amount || "0");
+      if (!amt) continue;
+      const rfDay = dayKeyAmsterdam(rf.createdAt);
+      if (rfDay < from || rfDay > to) continue; // alleen refunds binnen de periode
+      if (!byDay[rfDay]) byDay[rfDay] = { date: rfDay, orders: 0, units: 0, revenue: 0, btw: 0, refunds: 0, cogs: 0, noCost: 0 };
+      byDay[rfDay].refunds += amt;
+    }
   }
 
   const missingCosts = Object.entries(costs).filter(([, c]) => !c.cost).map(([id, c]) => ({ id, title: c.title }));

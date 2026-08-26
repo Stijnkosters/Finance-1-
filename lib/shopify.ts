@@ -40,6 +40,7 @@ query Orders($cursor: String, $q: String) {
       totalPriceSet { shopMoney { amount } }
       totalTaxSet { shopMoney { amount } }
       totalRefundedSet { shopMoney { amount } }
+      refunds { createdAt totalRefundedSet { shopMoney { amount } } }
       lineItems(first: 50) {
         nodes {
           quantity
@@ -51,8 +52,8 @@ query Orders($cursor: String, $q: String) {
   }
 }`;
 
-export async function fetchOrders(from: string, to: string, cfg?: ShopifyCfg) {
-  const q = `created_at:>='${from}T00:00:00Z' created_at:<='${to}T23:59:59Z'`;
+export async function fetchOrders(from: string, to: string, cfg?: ShopifyCfg, queryOverride?: string) {
+  const q = queryOverride ?? `created_at:>='${from}T00:00:00Z' created_at:<='${to}T23:59:59Z'`;
   let cursor: string | null = null;
   const out: any[] = [];
   for (let i = 0; i < 50; i++) {
