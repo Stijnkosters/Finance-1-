@@ -118,6 +118,20 @@ export default function Dashboard() {
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [period, fromInput, toInput, shop]);
 
+  // Supplier-refunds (NicheBay, alleen Drivemax/Totaal) — apart geladen zodat de
+  // P&L snel blijft. In EUR (dagkoers).
+  const [supRef, setSupRef] = useState<any>(null);
+  useEffect(() => {
+    if (shop !== "drivemax" && shop !== "totaal") { setSupRef(null); return; }
+    const { from, to } = getRange();
+    let cancelled = false;
+    setSupRef(null);
+    fetch(`/api/nichebay/refunds?from=${from}&to=${to}`).then((r) => r.json())
+      .then((r) => { if (!cancelled && r.ok) setSupRef(r); }).catch(() => {});
+    return () => { cancelled = true; };
+    /* eslint-disable-next-line */
+  }, [shop, period, fromInput, toInput]);
+
   const reloadData = async () => {
     try { const r = await fetch(`/api/data`).then((x) => x.json()); setData(r); } catch {}
   };
@@ -462,6 +476,11 @@ export default function Dashboard() {
                       </div>
                     ) : null;
                   })()}
+                  {supRef && (supRef.total || 0) > 0 && (
+                    <div className="banner info" style={{ marginBottom: 12 }}>
+                      <b>Refunds:</b> €{numf(totals.refunds || 0)} aan klanten terugbetaald · <b>terug van leverancier</b> (NicheBay): €{numf(supRef.total || 0)} → <b>netto refund-kost: €{numf((totals.refunds || 0) - (supRef.total || 0))}</b>. <span className="dim">({supRef.count} credits, USD→EUR dagkoers{supRef.pending ? `, ${supRef.pending} nog in behandeling` : ""})</span>
+                    </div>
+                  )}
                   <div className="table-wrap">
                     <table className="table">
                       <thead>

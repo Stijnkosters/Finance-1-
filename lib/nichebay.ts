@@ -1,6 +1,8 @@
 // NicheBay Open API client. Haalt per order de kostprijs op en mapt op Shopify-ordernummer.
 // Docs: https://app.nichebay.com/shop_admin/apiDocument.html
 
+import { toEUR } from "@/lib/fx";
+
 const BASE = "https://dashboard-admin.nichebay.com/api/open/v1";
 const KEY = process.env.NICHEBAY_API_KEY;
 
@@ -68,15 +70,17 @@ const DATE_FIELDS = ["created_at", "create_time", "date", "time", "trans_time", 
 const WEEK = 7 * 24 * 3600;
 // Supplier-refunds per order uit /refunds. Velden: order_number, refund_amount
 // (aangevraagd), check_amount (goedgekeurd/uitbetaald), check_status (30 = goedgekeurd).
-// Bedragen in USD (zoals in het portaal). /refunds mag max 7 dagen per query.
+// Bedragen in USD → omgerekend naar EUR met de dagkoers van het weekvenster.
 export async function fetchNicheBayRefunds(fromSec: number, toSec: number, maxPages = 20, limit = 100) {
-  let approved = 0, requested = 0, count = 0, pending = 0;
-  const byOrder: Record<string, number> = {};
+  let approvedUsd = 0, requestedUsd = 0, approvedEur = 0, count = 0, pending = 0, fxFailed = 0;
+  const byOrder: Record<string, number> = {};     // per order in EUR
+  const byOrderUsd: Record<string, number> = {};
   let refundSample: any = null;
   const seenIds = new Set<any>();
 
   for (let wStart = fromSec; wStart < toSec; wStart += WEEK) {
     const wEnd = Math.min(wStart + WEEK - 1, toSec);
+    const fxDate = new Date(wStart * 1000).toISOString().slice(0, 10); // dagkoers van dit venster
     const range = `&created_at_min=${wStart}&created_at_max=${wEnd}`;
     for (let page = 1; page <= maxPages; page++) {
       const j = await nbGet(`/refunds?page=${page}&limit=${limit}${range}`);
@@ -87,26 +91,30 @@ export async function fetchNicheBayRefunds(fromSec: number, toSec: number, maxPa
         if (r?.id != null) seenIds.add(r.id);
         if (!refundSample) refundSample = r;
         count++;
-        const reqAmt = Math.abs(toNum(r?.refund_amount));
+        requestedUsd += Math.abs(toNum(r?.refund_amount));
         const okAmt = Math.abs(toNum(r?.check_amount));
-        requested += reqAmt;
+        if (okAmt <= 0) { pending++; continue; }
+        approvedUsd += okAmt;
+        const eur = await toEUR(okAmt, "USD", fxDate);
+        const eurAmt = eur == null ? okAmt * 0.92 : eur; // val terug op ~0,92 als de koers hapert
+        if (eur == null) fxFailed++;
+        approvedEur += eurAmt;
         const ono = normNo(r?.order_number || r?.order_no);
-        if (okAmt > 0) {
-          approved += okAmt;
-          if (ono) byOrder[ono] = Math.round(((byOrder[ono] || 0) + okAmt) * 100) / 100;
-        } else {
-          pending++;
+        if (ono) {
+          byOrder[ono] = Math.round(((byOrder[ono] || 0) + eurAmt) * 100) / 100;
+          byOrderUsd[ono] = Math.round(((byOrderUsd[ono] || 0) + okAmt) * 100) / 100;
         }
       }
       if (list.length < limit) break;
     }
   }
   return {
-    total: Math.round(approved * 100) / 100,     // goedgekeurd (=daadwerkelijk terug), USD
-    requested: Math.round(requested * 100) / 100, // aangevraagd totaal, USD
-    count, pending,
-    currency: "USD",
-    byOrder,
+    total: Math.round(approvedEur * 100) / 100,        // goedgekeurd, in EUR (dagkoers)
+    totalUsd: Math.round(approvedUsd * 100) / 100,
+    requestedUsd: Math.round(requestedUsd * 100) / 100,
+    count, pending, fxFailed,
+    byOrder,        // EUR per order
+    byOrderUsd,
     refundSample,
   };
 }
