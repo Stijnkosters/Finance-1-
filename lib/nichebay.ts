@@ -68,10 +68,18 @@ const CURRENCY_FIELDS = ["currency", "currency_code", "coin", "unit"];
 const DATE_FIELDS = ["created_at", "create_time", "date", "time", "trans_time", "pay_time", "updated_at"];
 
 const WEEK = 7 * 24 * 3600;
+// Korte cache zodat herhaalde P&L-loads dezelfde periode niet steeds opnieuw ophalen.
+const _refundCache = new Map<string, { t: number; data: any }>();
+const REFUND_TTL = 15 * 60 * 1000;
+
 // Supplier-refunds per order uit /refunds. Velden: order_number, refund_amount
 // (aangevraagd), check_amount (goedgekeurd/uitbetaald), check_status (30 = goedgekeurd).
 // Bedragen in USD → omgerekend naar EUR met de dagkoers van het weekvenster.
 export async function fetchNicheBayRefunds(fromSec: number, toSec: number, maxPages = 20, limit = 100) {
+  const cacheKey = `${fromSec}:${toSec}`;
+  const hit = _refundCache.get(cacheKey);
+  if (hit && Date.now() - hit.t < REFUND_TTL) return hit.data;
+
   let approvedUsd = 0, requestedUsd = 0, approvedEur = 0, count = 0, pending = 0, fxFailed = 0;
   const byOrder: Record<string, number> = {};     // per order in EUR
   const byOrderUsd: Record<string, number> = {};
@@ -108,7 +116,7 @@ export async function fetchNicheBayRefunds(fromSec: number, toSec: number, maxPa
       if (list.length < limit) break;
     }
   }
-  return {
+  const out = {
     total: Math.round(approvedEur * 100) / 100,        // goedgekeurd, in EUR (dagkoers)
     totalUsd: Math.round(approvedUsd * 100) / 100,
     requestedUsd: Math.round(requestedUsd * 100) / 100,
@@ -117,6 +125,8 @@ export async function fetchNicheBayRefunds(fromSec: number, toSec: number, maxPa
     byOrderUsd,
     refundSample,
   };
+  _refundCache.set(cacheKey, { t: Date.now(), data: out });
+  return out;
 }
 
 // Mogelijke veldnamen — NicheBay-doc toont de schema's niet, dus we proberen de gangbare.

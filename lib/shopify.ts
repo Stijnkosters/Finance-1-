@@ -36,6 +36,7 @@ query Orders($cursor: String, $q: String) {
       name
       createdAt
       customer { id }
+      shippingAddress { countryCodeV2 }
       subtotalPriceSet { shopMoney { amount } }
       totalPriceSet { shopMoney { amount } }
       totalTaxSet { shopMoney { amount } }

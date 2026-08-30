@@ -118,19 +118,6 @@ export default function Dashboard() {
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [period, fromInput, toInput, shop]);
 
-  // Supplier-refunds (NicheBay, alleen Drivemax/Totaal) — apart geladen zodat de
-  // P&L snel blijft. In EUR (dagkoers).
-  const [supRef, setSupRef] = useState<any>(null);
-  useEffect(() => {
-    if (shop !== "drivemax" && shop !== "totaal") { setSupRef(null); return; }
-    const { from, to } = getRange();
-    let cancelled = false;
-    setSupRef(null);
-    fetch(`/api/nichebay/refunds?from=${from}&to=${to}`).then((r) => r.json())
-      .then((r) => { if (!cancelled && r.ok) setSupRef(r); }).catch(() => {});
-    return () => { cancelled = true; };
-    /* eslint-disable-next-line */
-  }, [shop, period, fromInput, toInput]);
 
   const reloadData = async () => {
     try { const r = await fetch(`/api/data`).then((x) => x.json()); setData(r); } catch {}
@@ -476,21 +463,11 @@ export default function Dashboard() {
                       </div>
                     ) : null;
                   })()}
-                  {supRef && (supRef.total || 0) > 0 && (() => {
-                    const sup = supRef.total || 0;
-                    const netRef = (totals.refunds || 0) - sup;
-                    const contribNet = (totals.omzet || 0) - (totals.cogs || 0) - (totals.fees || 0) - netRef;
-                    const netBe = contribNet > 0 ? (totals.omzet || 0) / contribNet : 0;
-                    const netWinst = (totals.totalProfit || 0) + sup;
-                    return (
-                      <div className="banner info" style={{ marginBottom: 12 }}>
-                        <b>Refunds:</b> €{numf(totals.refunds || 0)} aan klanten · <b>terug van leverancier</b> (NicheBay): €{numf(sup)} → <b>netto refund-kost €{numf(netRef)}</b>.
-                        <br />
-                        <b>Netto (incl. leverancier-credit):</b> break-even ROAS <b>{numf(netBe)}</b> <span className="dim">(bruto {numf(totals.breakevenRoas || 0)})</span> · winst <b className={netWinst >= 0 ? "green" : "red"}>€{numf(netWinst)}</b> <span className="dim">(bruto €{numf(totals.totalProfit || 0)})</span>.
-                        <span className="dim"> — {supRef.count} credits, USD→EUR dagkoers{supRef.pending ? `, ${supRef.pending} nog in behandeling` : ""}. De tabel hieronder toont de bruto klant-refunds.</span>
-                      </div>
-                    );
-                  })()}
+                  {(totals.supplierRefunds || 0) > 0 && (
+                    <div className="banner info" style={{ marginBottom: 12 }}>
+                      <b>Terug van leverancier</b> (NicheBay): €{numf(totals.supplierRefunds || 0)} verrekend (USD→EUR dagkoers). Klant-refunds bruto €{numf(totals.refundsGross || 0)} → <b>netto refund-kost €{numf(totals.refunds || 0)}</b>. Winst, marge en break-even hieronder zijn <b>netto</b>. <span className="dim">De dag-rijen tonen de bruto klant-refunds, dus de TOTAAL-regel wijkt bewust €{numf(totals.supplierRefunds || 0)} af van de som van de dagen.</span>
+                    </div>
+                  )}
                   <div className="table-wrap">
                     <table className="table">
                       <thead>
@@ -544,7 +521,7 @@ export default function Dashboard() {
                             <td className="r mono">{eur(totals.aov || 0)}</td>
                             <td className="r mono">{eur(totals.omzet || 0)}</td>
                             <td className="r mono amber">{eur(totals.btw || 0)}</td>
-                            <td className="r mono">{eur(totals.refunds)}</td>
+                            <td className="r mono" title={(totals.supplierRefunds || 0) > 0 ? `Netto: bruto €${numf(totals.refundsGross || 0)} − €${numf(totals.supplierRefunds || 0)} terug van leverancier` : undefined}>{eur(totals.refunds)}{(totals.supplierRefunds || 0) > 0 ? " *" : ""}</td>
                             <td className="r mono">{eur(totals.cogs)}</td>
                             <td className="r mono">{eur(totals.fees)}</td>
                             <td className="r mono">{eur(totals.adspend)}</td>

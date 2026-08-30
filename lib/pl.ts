@@ -1,6 +1,6 @@
 import { fetchOrders } from "@/lib/shopify";
 import { resolveAdSpend } from "@/lib/adspend";
-import { nichebayConfigured, fetchNicheBayCostByOrder } from "@/lib/nichebay";
+import { nichebayConfigured, fetchNicheBayCostByOrder, fetchNicheBayRefunds } from "@/lib/nichebay";
 import { SHOPS, getShop, type ShopCfg } from "@/lib/shops";
 import { readJson } from "@/lib/store";
 import { resolveShopifyCfg, shopHasCredentials } from "@/lib/shopifyAuth";
@@ -279,6 +279,35 @@ export async function computePL(shopParam: string, from: string, to: string): Pr
   }
 
   const { days, totals } = finalize(mergedByDay, mergedAd, mergedCust);
+
+  // Terug van leverancier (NicheBay-refunds, EUR via dagkoers): verreken als
+  // lagere refund-kost in ALLE totalen (winst, break-even, marges). De dag-rijen
+  // blijven de bruto klant-refunds tonen; de TOTAAL-regel is daardoor netto.
+  let supplierRefunds = 0;
+  if (targets.some((s) => s.nichebay) && nichebayConfigured()) {
+    try {
+      const fromSec = Math.floor(new Date(from + "T00:00:00Z").getTime() / 1000);
+      const toSec = Math.floor(new Date(to + "T23:59:59Z").getTime() / 1000);
+      supplierRefunds = (await fetchNicheBayRefunds(fromSec, toSec)).total || 0;
+    } catch { /* stil: extra info */ }
+  }
+  if (supplierRefunds > 0) {
+    const grossRefunds = totals.refunds || 0;
+    const netRefunds = grossRefunds - supplierRefunds;
+    totals.refundsGross = round(grossRefunds);
+    totals.supplierRefunds = round(supplierRefunds);
+    totals.refunds = round(netRefunds);
+    totals.totalProfit = round((totals.totalProfit || 0) + supplierRefunds);
+    const contrib = (totals.omzet || 0) - (totals.cogs || 0) - (totals.fees || 0) - netRefunds;
+    totals.contributionMargin = round(contrib);
+    totals.marginPct = totals.omzet > 0 ? round((contrib / totals.omzet) * 100) : 0;
+    totals.netMarginPct = totals.omzet > 0 ? round((totals.totalProfit / totals.omzet) * 100) : 0;
+    totals.breakevenRoas = contrib > 0 ? round((totals.omzet || 0) / contrib) : 0;
+    const O = totals.orders || 0;
+    totals.maxCpa = O > 0 ? round(contrib / O) : 0;
+    totals.profitPerOrder = O > 0 ? round((totals.totalProfit || 0) / O) : 0;
+    totals.refundRate = totals.omzet > 0 ? round((netRefunds / totals.omzet) * 100) : 0;
+  }
 
   return {
     ok: true,
