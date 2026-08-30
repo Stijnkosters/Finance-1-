@@ -47,30 +47,35 @@ export async function fetchNicheBayRefunds(fromSec: number, toSec: number, maxPa
   let refundSample: any = null;
   let rawFirst: any = null;
 
-  // /finances staat max 7 dagen per query toe → per week ophalen en optellen.
+  // Refunds/credits zitten in data.other_finances (type "refund"); order_finances
+  // is de COGS-lijst (die pagineert). /finances mag max 7 dagen per query.
+  const seenIds = new Set<any>();
   for (let wStart = fromSec; wStart < toSec; wStart += WEEK) {
     const wEnd = Math.min(wStart + WEEK - 1, toSec);
     const range = `&created_at_min=${wStart}&created_at_max=${wEnd}`;
     for (let page = 1; page <= maxPages; page++) {
       const j = await nbGet(`/finances?page=${page}&limit=${limit}${range}`);
-      if (!rawFirst) rawFirst = j;
-      const list = extractList(j);
-      if (!Array.isArray(list) || list.length === 0) break;
-      if (!sample) sample = list[0];
-      for (const r of list) {
+      if (!rawFirst) rawFirst = { keys: Object.keys(j?.data || {}) };
+      const data = j?.data ?? j;
+      const others: any[] = Array.isArray(data?.other_finances) ? data.other_finances : [];
+      const orderList: any[] = Array.isArray(data?.order_finances) ? data.order_finances : extractList(j);
+      for (const r of others) {
+        if (r?.id != null && seenIds.has(r.id)) continue;
+        if (r?.id != null) seenIds.add(r.id);
         scanned++;
-        const method = String(pick(r, METHOD_FIELDS) || "").toLowerCase();
-        if (method) methodsSeen[method] = (methodsSeen[method] || 0) + 1;
-        if (!/refund/.test(method)) continue;
+        const type = String(r?.type || pick(r, METHOD_FIELDS) || "").toLowerCase();
+        if (type) methodsSeen[type] = (methodsSeen[type] || 0) + 1;
+        if (!/refund/.test(type)) continue;
         if (!refundSample) refundSample = r;
-        const amt = Math.abs(toNum(pick(r, AMOUNT_FIELDS)));
-        const cur = String(pick(r, CURRENCY_FIELDS) || "").toUpperCase() || (String(pick(r, AMOUNT_FIELDS)).includes("$") ? "USD" : "?");
+        const amt = Math.abs(toNum(r?.amount ?? pick(r, AMOUNT_FIELDS)));
+        const cur = String(r?.currency || pick(r, CURRENCY_FIELDS) || "?").toUpperCase();
         currencies[cur] = Math.round(((currencies[cur] || 0) + amt) * 100) / 100;
         total += amt; count++;
-        const ono = normNo(pick(r, ORDER_NO_FIELDS) || r.order_number || r.order_no || r.order_sn);
+        const ono = normNo(pick(r, ORDER_NO_FIELDS) || r?.order_number || r?.order_no || r?.order_sn);
         if (ono) byOrder[ono] = Math.round(((byOrder[ono] || 0) + amt) * 100) / 100;
       }
-      if (list.length < limit) break;
+      if (!orderList.length) break; // paginatie op de order-lijst
+      if (orderList.length < limit) break;
     }
   }
   return {
