@@ -29,6 +29,34 @@ export async function nbTest() {
   return nbGet("/test");
 }
 
+// Tast endpoints af die refunds MET ordernummer zouden kunnen geven.
+export async function nbRefundProbe(fromSec: number, toSec: number) {
+  const range = `created_at_min=${fromSec}&created_at_max=${toSec}`;
+  const paths = [
+    "/refunds", "/refund", "/refund/list", "/refund/page", "/refund_order", "/refund_orders", "/order_refunds",
+    "/aftersale", "/aftersale/list", "/after_sale", "/after_sale/list", "/after-sales",
+    "/returns", "/return", "/return/list", "/order/refunds", "/order/refund", "/finance/refunds", "/finances/refunds",
+  ];
+  const results: any[] = [];
+  for (const p of paths) {
+    for (const q of [`?page=1&limit=5&${range}`, `?page=1&limit=5`]) {
+      try {
+        const res = await fetch(`${BASE}${p}${q}`, { headers: { Authorization: `Bearer ${KEY}`, Accept: "application/json" }, cache: "no-store" });
+        const text = await res.text();
+        let j: any = null; try { j = JSON.parse(text); } catch {}
+        const msg = j?.message;
+        // Sla 404/"not found" over; toon alleen kansrijke (200 of 400-met-params-hint)
+        if (res.status === 404) { results.push({ path: p + q, status: 404 }); break; }
+        results.push({ path: p + q, status: res.status, ok: res.ok, message: msg, keys: j?.data ? Object.keys(j.data) : Object.keys(j || {}), sample: text.slice(0, 500) });
+        if (res.ok) break; // gevonden, geen 2e variant nodig
+      } catch (e: any) {
+        results.push({ path: p + q, error: String(e.message).slice(0, 120) });
+      }
+    }
+  }
+  return results;
+}
+
 // ---- Supplier-refunds (credits die NicheBay terugstort bij retour) ----
 // De Invoicing-lijst in het portaal komt uit /finances; regels met method/type
 // "Refund" zijn de leverancier-credits. We tellen ze op (totaal + per order).

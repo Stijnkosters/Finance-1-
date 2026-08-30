@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { nichebayConfigured, fetchNicheBayRefunds } from "@/lib/nichebay";
+import { nichebayConfigured, fetchNicheBayRefunds, nbRefundProbe } from "@/lib/nichebay";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -16,6 +16,11 @@ export async function GET(req: Request) {
     const fromStr = searchParams.get("from");
     const toSec = toStr ? Math.floor(new Date(toStr + "T23:59:59Z").getTime() / 1000) : Math.floor(Date.now() / 1000);
     const fromSec = fromStr ? Math.floor(new Date(fromStr + "T00:00:00Z").getTime() / 1000) : Math.floor(Date.now() / 1000) - 30 * 24 * 3600;
+    if (searchParams.get("probe")) {
+      // probe met een veilig 7-daags venster
+      const probe = await nbRefundProbe(toSec - 7 * 24 * 3600, toSec);
+      return NextResponse.json({ ok: true, probe });
+    }
     const r = await fetchNicheBayRefunds(fromSec, toSec);
     return NextResponse.json({ ok: true, range: { from: fromSec, to: toSec }, ...r });
   } catch (e: any) {
