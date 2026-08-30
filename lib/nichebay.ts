@@ -37,33 +37,39 @@ const AMOUNT_FIELDS = ["amount", "money", "fee", "sum", "value", "total", "pay_a
 const CURRENCY_FIELDS = ["currency", "currency_code", "coin", "unit"];
 const DATE_FIELDS = ["created_at", "create_time", "date", "time", "trans_time", "pay_time", "updated_at"];
 
-export async function fetchNicheBayRefunds(fromSec: number, toSec: number, maxPages = 60, limit = 100) {
+const WEEK = 7 * 24 * 3600;
+export async function fetchNicheBayRefunds(fromSec: number, toSec: number, maxPages = 20, limit = 100) {
   let total = 0, count = 0, scanned = 0;
   const byOrder: Record<string, number> = {};
   const methodsSeen: Record<string, number> = {};
   const currencies: Record<string, number> = {};
   let sample: any = null;
   let refundSample: any = null;
-  const range = `&created_at_min=${fromSec}&created_at_max=${toSec}`;
-  for (let page = 1; page <= maxPages; page++) {
-    const j = await nbGet(`/finances?page=${page}&limit=${limit}${range}`);
-    const list = extractList(j);
-    if (!Array.isArray(list) || list.length === 0) break;
-    if (!sample) sample = list[0];
-    for (const r of list) {
-      scanned++;
-      const method = String(pick(r, METHOD_FIELDS) || "").toLowerCase();
-      if (method) methodsSeen[method] = (methodsSeen[method] || 0) + 1;
-      if (!/refund/.test(method)) continue;
-      if (!refundSample) refundSample = r;
-      const amt = Math.abs(toNum(pick(r, AMOUNT_FIELDS)));
-      const cur = String(pick(r, CURRENCY_FIELDS) || "").toUpperCase() || (String(pick(r, AMOUNT_FIELDS)).includes("$") ? "USD" : "?");
-      currencies[cur] = Math.round(((currencies[cur] || 0) + amt) * 100) / 100;
-      total += amt; count++;
-      const ono = normNo(pick(r, ORDER_NO_FIELDS) || r.order_number || r.order_no || r.order_sn);
-      if (ono) byOrder[ono] = Math.round(((byOrder[ono] || 0) + amt) * 100) / 100;
+
+  // /finances staat max 7 dagen per query toe → per week ophalen en optellen.
+  for (let wStart = fromSec; wStart < toSec; wStart += WEEK) {
+    const wEnd = Math.min(wStart + WEEK - 1, toSec);
+    const range = `&created_at_min=${wStart}&created_at_max=${wEnd}`;
+    for (let page = 1; page <= maxPages; page++) {
+      const j = await nbGet(`/finances?page=${page}&limit=${limit}${range}`);
+      const list = extractList(j);
+      if (!Array.isArray(list) || list.length === 0) break;
+      if (!sample) sample = list[0];
+      for (const r of list) {
+        scanned++;
+        const method = String(pick(r, METHOD_FIELDS) || "").toLowerCase();
+        if (method) methodsSeen[method] = (methodsSeen[method] || 0) + 1;
+        if (!/refund/.test(method)) continue;
+        if (!refundSample) refundSample = r;
+        const amt = Math.abs(toNum(pick(r, AMOUNT_FIELDS)));
+        const cur = String(pick(r, CURRENCY_FIELDS) || "").toUpperCase() || (String(pick(r, AMOUNT_FIELDS)).includes("$") ? "USD" : "?");
+        currencies[cur] = Math.round(((currencies[cur] || 0) + amt) * 100) / 100;
+        total += amt; count++;
+        const ono = normNo(pick(r, ORDER_NO_FIELDS) || r.order_number || r.order_no || r.order_sn);
+        if (ono) byOrder[ono] = Math.round(((byOrder[ono] || 0) + amt) * 100) / 100;
+      }
+      if (list.length < limit) break;
     }
-    if (list.length < limit) break;
   }
   return {
     total: Math.round(total * 100) / 100,
