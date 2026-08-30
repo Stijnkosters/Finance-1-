@@ -29,6 +29,52 @@ export async function nbTest() {
   return nbGet("/test");
 }
 
+// ---- Supplier-refunds (credits die NicheBay terugstort bij retour) ----
+// De Invoicing-lijst in het portaal komt uit /finances; regels met method/type
+// "Refund" zijn de leverancier-credits. We tellen ze op (totaal + per order).
+const METHOD_FIELDS = ["method", "type", "transaction_type", "trans_type", "pay_type", "payment_method", "category", "action", "biz_type", "order_type", "flow_type", "title", "remark"];
+const AMOUNT_FIELDS = ["amount", "money", "fee", "sum", "value", "total", "pay_amount", "trans_amount", "change_amount"];
+const CURRENCY_FIELDS = ["currency", "currency_code", "coin", "unit"];
+const DATE_FIELDS = ["created_at", "create_time", "date", "time", "trans_time", "pay_time", "updated_at"];
+
+export async function fetchNicheBayRefunds(maxPages = 40, limit = 100) {
+  let total = 0, count = 0, scanned = 0;
+  const byOrder: Record<string, number> = {};
+  const methodsSeen: Record<string, number> = {};
+  const currencies: Record<string, number> = {};
+  let sample: any = null;
+  let refundSample: any = null;
+  for (let page = 1; page <= maxPages; page++) {
+    const j = await nbGet(`/finances?page=${page}&limit=${limit}`);
+    const list = extractList(j);
+    if (!Array.isArray(list) || list.length === 0) break;
+    if (!sample) sample = list[0];
+    for (const r of list) {
+      scanned++;
+      const method = String(pick(r, METHOD_FIELDS) || "").toLowerCase();
+      if (method) methodsSeen[method] = (methodsSeen[method] || 0) + 1;
+      if (!/refund/.test(method)) continue;
+      if (!refundSample) refundSample = r;
+      const amt = Math.abs(toNum(pick(r, AMOUNT_FIELDS)));
+      const cur = String(pick(r, CURRENCY_FIELDS) || "").toUpperCase() || (String(pick(r, AMOUNT_FIELDS)).includes("$") ? "USD" : "?");
+      currencies[cur] = Math.round(((currencies[cur] || 0) + amt) * 100) / 100;
+      total += amt; count++;
+      const ono = normNo(pick(r, ORDER_NO_FIELDS) || r.order_number || r.order_no || r.order_sn);
+      if (ono) byOrder[ono] = Math.round(((byOrder[ono] || 0) + amt) * 100) / 100;
+    }
+    if (list.length < limit) break;
+  }
+  return {
+    total: Math.round(total * 100) / 100,
+    count, scanned,
+    byOrder,
+    currencies,
+    methodsSeen,
+    sample,        // ruw eerste /finances-record → veldnamen verifiëren
+    refundSample,  // ruw eerste refund-record
+  };
+}
+
 // Mogelijke veldnamen — NicheBay-doc toont de schema's niet, dus we proberen de gangbare.
 const ORDER_NO_FIELDS = [
   "order_no", "order_number", "platform_order_no", "platform_order_number",
