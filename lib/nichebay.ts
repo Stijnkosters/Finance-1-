@@ -66,55 +66,48 @@ const CURRENCY_FIELDS = ["currency", "currency_code", "coin", "unit"];
 const DATE_FIELDS = ["created_at", "create_time", "date", "time", "trans_time", "pay_time", "updated_at"];
 
 const WEEK = 7 * 24 * 3600;
+// Supplier-refunds per order uit /refunds. Velden: order_number, refund_amount
+// (aangevraagd), check_amount (goedgekeurd/uitbetaald), check_status (30 = goedgekeurd).
+// Bedragen in USD (zoals in het portaal). /refunds mag max 7 dagen per query.
 export async function fetchNicheBayRefunds(fromSec: number, toSec: number, maxPages = 20, limit = 100) {
-  let total = 0, count = 0, scanned = 0;
+  let approved = 0, requested = 0, count = 0, pending = 0;
   const byOrder: Record<string, number> = {};
-  const methodsSeen: Record<string, number> = {};
-  const currencies: Record<string, number> = {};
-  let sample: any = null;
   let refundSample: any = null;
-  let rawFirst: any = null;
-
-  // Refunds/credits zitten in data.other_finances (type "refund"); order_finances
-  // is de COGS-lijst (die pagineert). /finances mag max 7 dagen per query.
   const seenIds = new Set<any>();
+
   for (let wStart = fromSec; wStart < toSec; wStart += WEEK) {
     const wEnd = Math.min(wStart + WEEK - 1, toSec);
     const range = `&created_at_min=${wStart}&created_at_max=${wEnd}`;
     for (let page = 1; page <= maxPages; page++) {
-      const j = await nbGet(`/finances?page=${page}&limit=${limit}${range}`);
-      if (!rawFirst) rawFirst = { keys: Object.keys(j?.data || {}) };
-      const data = j?.data ?? j;
-      const others: any[] = Array.isArray(data?.other_finances) ? data.other_finances : [];
-      const orderList: any[] = Array.isArray(data?.order_finances) ? data.order_finances : extractList(j);
-      for (const r of others) {
+      const j = await nbGet(`/refunds?page=${page}&limit=${limit}${range}`);
+      const list: any[] = j?.data?.refunds || [];
+      if (!Array.isArray(list) || list.length === 0) break;
+      for (const r of list) {
         if (r?.id != null && seenIds.has(r.id)) continue;
         if (r?.id != null) seenIds.add(r.id);
-        scanned++;
-        const type = String(r?.type || pick(r, METHOD_FIELDS) || "").toLowerCase();
-        if (type) methodsSeen[type] = (methodsSeen[type] || 0) + 1;
-        if (!/refund/.test(type)) continue;
         if (!refundSample) refundSample = r;
-        const amt = Math.abs(toNum(r?.amount ?? pick(r, AMOUNT_FIELDS)));
-        const cur = String(r?.currency || pick(r, CURRENCY_FIELDS) || "?").toUpperCase();
-        currencies[cur] = Math.round(((currencies[cur] || 0) + amt) * 100) / 100;
-        total += amt; count++;
-        const ono = normNo(pick(r, ORDER_NO_FIELDS) || r?.order_number || r?.order_no || r?.order_sn);
-        if (ono) byOrder[ono] = Math.round(((byOrder[ono] || 0) + amt) * 100) / 100;
+        count++;
+        const reqAmt = Math.abs(toNum(r?.refund_amount));
+        const okAmt = Math.abs(toNum(r?.check_amount));
+        requested += reqAmt;
+        const ono = normNo(r?.order_number || r?.order_no);
+        if (okAmt > 0) {
+          approved += okAmt;
+          if (ono) byOrder[ono] = Math.round(((byOrder[ono] || 0) + okAmt) * 100) / 100;
+        } else {
+          pending++;
+        }
       }
-      if (!orderList.length) break; // paginatie op de order-lijst
-      if (orderList.length < limit) break;
+      if (list.length < limit) break;
     }
   }
   return {
-    total: Math.round(total * 100) / 100,
-    count, scanned,
+    total: Math.round(approved * 100) / 100,     // goedgekeurd (=daadwerkelijk terug), USD
+    requested: Math.round(requested * 100) / 100, // aangevraagd totaal, USD
+    count, pending,
+    currency: "USD",
     byOrder,
-    currencies,
-    methodsSeen,
-    sample,        // ruw eerste /finances-record → veldnamen verifiëren
-    refundSample,  // ruw eerste refund-record
-    rawFirst,      // ruwe eerste /finances-response (om de structuur te zien)
+    refundSample,
   };
 }
 
