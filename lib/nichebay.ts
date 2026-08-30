@@ -45,6 +45,7 @@ export async function fetchNicheBayRefunds(fromSec: number, toSec: number, maxPa
   const currencies: Record<string, number> = {};
   let sample: any = null;
   let refundSample: any = null;
+  let rawFirst: any = null;
 
   // /finances staat max 7 dagen per query toe → per week ophalen en optellen.
   for (let wStart = fromSec; wStart < toSec; wStart += WEEK) {
@@ -52,6 +53,7 @@ export async function fetchNicheBayRefunds(fromSec: number, toSec: number, maxPa
     const range = `&created_at_min=${wStart}&created_at_max=${wEnd}`;
     for (let page = 1; page <= maxPages; page++) {
       const j = await nbGet(`/finances?page=${page}&limit=${limit}${range}`);
+      if (!rawFirst) rawFirst = j;
       const list = extractList(j);
       if (!Array.isArray(list) || list.length === 0) break;
       if (!sample) sample = list[0];
@@ -79,6 +81,7 @@ export async function fetchNicheBayRefunds(fromSec: number, toSec: number, maxPa
     methodsSeen,
     sample,        // ruw eerste /finances-record → veldnamen verifiëren
     refundSample,  // ruw eerste refund-record
+    rawFirst,      // ruwe eerste /finances-response (om de structuur te zien)
   };
 }
 
