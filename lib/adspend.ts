@@ -1,4 +1,4 @@
-import { googleAdsConfigured, fetchAdSpendByDay } from "@/lib/googleAds";
+import { googleAdsConfigured, fetchGoogleStatsByDay } from "@/lib/googleAds";
 import { readJson } from "@/lib/store";
 import adspendData from "@/data/adspend.json";
 
@@ -93,8 +93,14 @@ export async function resolveAdSpend(from: string, to: string, opts?: AdSpendOpt
 
   const total: Record<string, number> = {};
   const breakdown = { google: 0, bing: 0, manual: 0 };
+  const convBreakdown = { google: 0, bing: 0 }; // conversiewaarde per kanaal (platform-gemeten)
   const sources: string[] = [];
   let warning: string | null = null;
+  const sumInRange = (m: Record<string, number> | undefined) => {
+    let s = 0;
+    for (const [d, v] of Object.entries(m || {})) if (d >= from && d <= to) s += v || 0;
+    return Math.round(s * 100) / 100;
+  };
 
   const addMap = (m: Record<string, number>) => {
     let s = 0;
@@ -118,8 +124,12 @@ export async function resolveAdSpend(from: string, to: string, opts?: AdSpendOpt
     ? useGoogleApi && !!googleCustomerId && googleAdsConfigured(googleCustomerId)
     : useGoogleApi && googleAdsConfigured();
   if (wantGoogleApi) {
-    try { googleMap = await fetchAdSpendByDay(from, to, googleCustomerId, opts?.googleLoginCustomerId); if (Object.keys(googleMap).length) sources.push("Google Ads"); }
-    catch (e: any) { warning = `Google Ads API faalde (${e.message}).`; }
+    try {
+      const g = await fetchGoogleStatsByDay(from, to, googleCustomerId, opts?.googleLoginCustomerId);
+      googleMap = g.spend;
+      convBreakdown.google = sumInRange(g.conv);
+      if (Object.keys(googleMap).length) sources.push("Google Ads");
+    } catch (e: any) { warning = `Google Ads API faalde (${e.message}).`; }
   }
   if (!Object.keys(googleMap).length && googleSheetUrl) {
     try { googleMap = await fetchFromSheet(googleSheetUrl); if (Object.keys(googleMap).length) sources.push("Google (Sheet)"); }
@@ -137,6 +147,7 @@ export async function resolveAdSpend(from: string, to: string, opts?: AdSpendOpt
         if (d >= from && d <= to) inRange[d] = v;
       }
       breakdown.bing = addMap(inRange);
+      convBreakdown.bing = sumInRange(cache.revenueMap);
       if (Object.keys(inRange).length) { sources.push("Bing (API)"); bingDone = true; }
     }
   } catch (e: any) {
@@ -148,5 +159,5 @@ export async function resolveAdSpend(from: string, to: string, opts?: AdSpendOpt
   }
 
   const source = sources.length ? sources.join(" + ") : "manual";
-  return { map: total, source, warning, breakdown };
+  return { map: total, source, warning, breakdown, convBreakdown };
 }

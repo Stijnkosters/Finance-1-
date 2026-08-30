@@ -400,6 +400,47 @@ export default function Dashboard() {
                   </p>
                 </Card>
 
+                {((pl.adBreakdown?.google || 0) + (pl.adBreakdown?.bing || 0)) > 0 && (() => {
+                  const g = pl.adBreakdown?.google || 0, b = pl.adBreakdown?.bing || 0;
+                  const gc = pl.adConvValue?.google || 0, bc = pl.adConvValue?.bing || 0;
+                  const totSpend = g + b, totConv = gc + bc;
+                  const roas = (conv: number, spend: number) => (spend > 0 ? conv / spend : 0);
+                  const mer = totSpend > 0 ? (totals.omzet || 0) / totSpend : 0;
+                  const row = (naam: string, spend: number, conv: number, hasConv: boolean) => (
+                    <tr>
+                      <td className="nowrap strong">{naam}</td>
+                      <td className="r mono">{eur(spend)}</td>
+                      <td className="r mono dim">{totSpend > 0 ? `${numf((spend / totSpend) * 100, 0)}%` : "—"}</td>
+                      <td className="r mono">{hasConv ? eur(conv) : "—"}</td>
+                      <td className="r mono strong">{hasConv && spend > 0 ? `${numf(roas(conv, spend))}×` : "n.b."}</td>
+                    </tr>
+                  );
+                  return (
+                    <Card title="ROAS per kanaal" subtitle="platform-gemeten conversiewaarde ÷ ad spend">
+                      <div className="table-wrap">
+                        <table className="table">
+                          <thead><tr><th>Kanaal</th><th className="r">Ad spend</th><th className="r">Aandeel</th><th className="r">Conversiewaarde</th><th className="r">ROAS</th></tr></thead>
+                          <tbody>
+                            {row("Google", g, gc, gc > 0)}
+                            {row("Bing", b, bc, bc > 0)}
+                            <tr style={{ borderTop: "2px solid var(--line)" }}>
+                              <td className="nowrap strong">Samen</td>
+                              <td className="r mono strong">{eur(totSpend)}</td>
+                              <td className="r mono dim">100%</td>
+                              <td className="r mono strong">{totConv > 0 ? eur(totConv) : "—"}</td>
+                              <td className="r mono strong">{totConv > 0 ? `${numf(roas(totConv, totSpend))}×` : "n.b."}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                      <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>
+                        ROAS per kanaal = de <b>conversiewaarde die het platform zelf meet</b> ÷ de spend van dat kanaal (Shopify kan omzet niet aan een kanaal toewijzen, dus dit is de platform-ROAS). Ter vergelijking: je blended <b>MER</b> (totale omzet ÷ totale ad spend) = <b>{numf(mer)}×</b>.
+                        {bc === 0 && b > 0 && <> <br /><b>Bing:</b> conversiewaarde is er nog niet — die komt binnen zodra de Bing-cache opnieuw is gesynct (met de nieuwe Revenue-kolom).</>}
+                      </p>
+                    </Card>
+                  );
+                })()}
+
                 <div className="grid2">
                   <Card title="Waar gaat je geld heen">
                     <div className="breakdown">

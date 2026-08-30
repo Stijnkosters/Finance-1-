@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { fetchBingSpendByDay, bingApiConfigured } from "@/lib/bingAds";
+import { fetchBingStatsByDay, bingApiConfigured } from "@/lib/bingAds";
 import { writeJson, persistenceEnabled } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
@@ -29,9 +29,9 @@ export async function GET(req: Request) {
     const from = new Date();
     from.setDate(from.getDate() - days);
 
-    const map = await fetchBingSpendByDay(ymd(from), ymd(to));
+    const { spend: map, revenue: revenueMap } = await fetchBingStatsByDay(ymd(from), ymd(to));
     const total = Object.values(map).reduce((a, b) => a + b, 0);
-    const payload = { updatedAt: new Date().toISOString(), from: ymd(from), to: ymd(to), map };
+    const payload = { updatedAt: new Date().toISOString(), from: ymd(from), to: ymd(to), map, revenueMap };
     await writeJson("bingspend.json", payload);
 
     return NextResponse.json({

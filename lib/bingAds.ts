@@ -62,7 +62,7 @@ async function submitReport(token: string, from: string, to: string): Promise<st
       ReportName: "DrivemaxDailySpend",
       ReturnOnlyCompleteData: false,
       Aggregation: "Daily",
-      Columns: ["TimePeriod", "Spend"],
+      Columns: ["TimePeriod", "Spend", "Revenue"],
       Scope: { AccountIds: [Number(process.env.BING_ACCOUNT_ID)] },
       Time: {
         CustomDateRangeStart: ymdParts(from),
@@ -121,42 +121,42 @@ function splitCsv(line: string): string[] {
   return out.map((c) => c.trim());
 }
 
-function parseReportCsv(csv: string): Record<string, number> {
-  const map: Record<string, number> = {};
+function parseNum(raw0: string): number {
+  const raw = (raw0 || "0").replace(/[^0-9.,-]/g, "");
+  if (!raw) return 0;
+  const lastComma = raw.lastIndexOf(","), lastDot = raw.lastIndexOf(".");
+  const norm = lastComma > lastDot ? raw.replace(/\./g, "").replace(",", ".") : raw.replace(/,/g, "");
+  return parseFloat(norm) || 0;
+}
+
+function parseReportCsv(csv: string): { spend: Record<string, number>; revenue: Record<string, number> } {
+  const spend: Record<string, number> = {};
+  const revenue: Record<string, number> = {};
   const lines = csv.split(/\r?\n/).filter((l) => l.trim().length);
-  let timeIdx = -1, spendIdx = -1;
+  let timeIdx = -1, spendIdx = -1, revIdx = -1;
   for (const line of lines) {
     const cols = splitCsv(line);
     if (timeIdx === -1) {
       const ti = cols.findIndex((c) => /^gregorian|^timeperiod$/i.test(c) || /timeperiod/i.test(c));
       const si = cols.findIndex((c) => /^spend$/i.test(c));
-      if (ti !== -1 && si !== -1) { timeIdx = ti; spendIdx = si; }
+      if (ti !== -1 && si !== -1) { timeIdx = ti; spendIdx = si; revIdx = cols.findIndex((c) => /^revenue$/i.test(c)); }
       continue;
     }
     const dRaw = cols[timeIdx] || "";
     const date = /^\d{4}-\d{2}-\d{2}$/.test(dRaw) ? dRaw : null;
     if (!date) continue;
-    const raw = (cols[spendIdx] || "0").replace(/[^0-9.,-]/g, "");
-    // EU/US-veilig: laatste , of . is decimaalteken
-    let val = 0;
-    if (raw) {
-      const lastComma = raw.lastIndexOf(","), lastDot = raw.lastIndexOf(".");
-      let norm = raw;
-      if (lastComma > lastDot) norm = raw.replace(/\./g, "").replace(",", ".");
-      else norm = raw.replace(/,/g, "");
-      val = parseFloat(norm) || 0;
-    }
-    map[date] = (map[date] || 0) + val;
+    spend[date] = (spend[date] || 0) + parseNum(cols[spendIdx] || "0");
+    if (revIdx !== -1) revenue[date] = (revenue[date] || 0) + parseNum(cols[revIdx] || "0");
   }
-  return map;
+  return { spend, revenue };
 }
 
 // Volledige flow: token -> submit -> poll -> download ZIP -> unzip -> parse CSV
-export async function fetchBingSpendByDay(from: string, to: string): Promise<Record<string, number>> {
+export async function fetchBingStatsByDay(from: string, to: string): Promise<{ spend: Record<string, number>; revenue: Record<string, number> }> {
   const token = await getAccessToken();
   const reqId = await submitReport(token, from, to);
   const url = await pollReport(token, reqId);
-  if (!url) return {}; // geen data in periode
+  if (!url) return { spend: {}, revenue: {} }; // geen data in periode
   const dl = await fetch(url, { cache: "no-store" });
   if (!dl.ok) throw new Error(`download (${dl.status})`);
   const buf = new Uint8Array(await dl.arrayBuffer());
@@ -165,4 +165,9 @@ export async function fetchBingSpendByDay(from: string, to: string): Promise<Rec
   if (!name) throw new Error("geen bestand in ZIP");
   const csv = new TextDecoder("utf-8").decode(files[name]);
   return parseReportCsv(csv);
+}
+
+// Backwards-compat: alleen de spend-map.
+export async function fetchBingSpendByDay(from: string, to: string): Promise<Record<string, number>> {
+  return (await fetchBingStatsByDay(from, to)).spend;
 }

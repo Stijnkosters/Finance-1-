@@ -246,6 +246,7 @@ export type PLResult =
       perShop: any[];
       adSource: string;
       adBreakdown: { google: number; bing: number; manual: number };
+      adConvValue: { google: number; bing: number };
       adWarning: string | null;
       cogsSource: string;
       cogsWarning: string | null;
@@ -279,6 +280,7 @@ export async function computePL(shopParam: string, from: string, to: string): Pr
   const mergedAd: Record<string, number> = {};
   const mergedCust: Record<string, { orders: number; revenue: number }> = {};
   const breakdown = { google: 0, bing: 0, manual: 0 };
+  const adConv = { google: 0, bing: 0 };
   const adSources: string[] = [];
   const perShop: any[] = [];
   let nbMatched = 0, nbZero = 0, ordersNoCost = 0, orderCount = 0;
@@ -306,6 +308,8 @@ export async function computePL(shopParam: string, from: string, to: string): Pr
     breakdown.google += g.adRes.breakdown.google;
     breakdown.bing += g.adRes.breakdown.bing;
     breakdown.manual += g.adRes.breakdown.manual;
+    adConv.google += g.adRes.convBreakdown?.google || 0;
+    adConv.bing += g.adRes.convBreakdown?.bing || 0;
     if (g.adRes.source && g.adRes.source !== "manual") adSources.push(`${shop.name}: ${g.adRes.source}`);
     nbMatched += g.nbMatched; nbZero += g.nbZero; ordersNoCost += g.ordersNoCost; orderCount += g.orderCount;
     cogsSource = cogsSource ? cogsSource : g.cogsSource;
@@ -359,6 +363,7 @@ export async function computePL(shopParam: string, from: string, to: string): Pr
     perShop,
     adSource: adSources.join(" · ") || "manual",
     adBreakdown: breakdown,
+    adConvValue: { google: round(adConv.google), bing: round(adConv.bing) },
     adWarning,
     cogsSource,
     cogsWarning,

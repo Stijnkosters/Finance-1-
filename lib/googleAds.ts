@@ -32,14 +32,14 @@ async function getAccessToken(): Promise<string> {
   return j.access_token;
 }
 
-// Returns { 'YYYY-MM-DD': spendInEuro }. customerId + loginCustomerId optioneel
-// (per-shop account + bijbehorende MCC).
-export async function fetchAdSpendByDay(from: string, to: string, customerId?: string, loginCustomerId?: string): Promise<Record<string, number>> {
+// Returns { spend, conv } per dag ('YYYY-MM-DD' → €). conv = conversiewaarde
+// (Google's eigen gemeten omzet) voor de ROAS per kanaal.
+export async function fetchGoogleStatsByDay(from: string, to: string, customerId?: string, loginCustomerId?: string): Promise<{ spend: Record<string, number>; conv: Record<string, number> }> {
   const cid = (customerId || "").replace(/-/g, "") || CUSTOMER_ID;
   const login = (loginCustomerId || "").replace(/-/g, "") || LOGIN_CUSTOMER_ID;
   const token = await getAccessToken();
   const query =
-    `SELECT segments.date, metrics.cost_micros FROM customer ` +
+    `SELECT segments.date, metrics.cost_micros, metrics.conversions_value FROM customer ` +
     `WHERE segments.date BETWEEN '${from}' AND '${to}'`;
 
   const headers: Record<string, string> = {
@@ -56,14 +56,21 @@ export async function fetchAdSpendByDay(from: string, to: string, customerId?: s
   if (!res.ok) throw new Error(`Google Ads ${res.status}: ${(await res.text()).slice(0, 300)}`);
 
   const data = await res.json(); // array van { results: [...] }
-  const map: Record<string, number> = {};
+  const spend: Record<string, number> = {};
+  const conv: Record<string, number> = {};
   const batches = Array.isArray(data) ? data : [data];
   for (const b of batches) {
     for (const row of b.results || []) {
       const date = row.segments?.date;
-      const micros = Number(row.metrics?.costMicros || 0);
-      if (date) map[date] = (map[date] || 0) + micros / 1e6;
+      if (!date) continue;
+      spend[date] = (spend[date] || 0) + Number(row.metrics?.costMicros || 0) / 1e6;
+      conv[date] = (conv[date] || 0) + Number(row.metrics?.conversionsValue || 0);
     }
   }
-  return map;
+  return { spend, conv };
+}
+
+// Backwards-compat: alleen de spend-map.
+export async function fetchAdSpendByDay(from: string, to: string, customerId?: string, loginCustomerId?: string): Promise<Record<string, number>> {
+  return (await fetchGoogleStatsByDay(from, to, customerId, loginCustomerId)).spend;
 }

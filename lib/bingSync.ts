@@ -1,4 +1,4 @@
-import { fetchBingSpendByDay, bingApiConfigured } from "./bingAds";
+import { fetchBingStatsByDay, bingApiConfigured } from "./bingAds";
 import { readJson, writeJson, persistenceEnabled } from "./store";
 
 let running = false;
@@ -21,8 +21,8 @@ export async function maybeAutoSyncBing(maxAgeHours = 8) {
         const to = new Date();
         const from = new Date();
         from.setDate(from.getDate() - 95);
-        const map = await fetchBingSpendByDay(ymd(from), ymd(to));
-        await writeJson("bingspend.json", { updatedAt: new Date().toISOString(), from: ymd(from), to: ymd(to), map });
+        const { spend, revenue } = await fetchBingStatsByDay(ymd(from), ymd(to));
+        await writeJson("bingspend.json", { updatedAt: new Date().toISOString(), from: ymd(from), to: ymd(to), map: spend, revenueMap: revenue });
       } catch {
         /* stil falen: dashboard toont dan gewoon de laatste cache */
       } finally {
