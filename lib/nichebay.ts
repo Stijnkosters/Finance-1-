@@ -37,15 +37,16 @@ const AMOUNT_FIELDS = ["amount", "money", "fee", "sum", "value", "total", "pay_a
 const CURRENCY_FIELDS = ["currency", "currency_code", "coin", "unit"];
 const DATE_FIELDS = ["created_at", "create_time", "date", "time", "trans_time", "pay_time", "updated_at"];
 
-export async function fetchNicheBayRefunds(maxPages = 40, limit = 100) {
+export async function fetchNicheBayRefunds(fromSec: number, toSec: number, maxPages = 60, limit = 100) {
   let total = 0, count = 0, scanned = 0;
   const byOrder: Record<string, number> = {};
   const methodsSeen: Record<string, number> = {};
   const currencies: Record<string, number> = {};
   let sample: any = null;
   let refundSample: any = null;
+  const range = `&created_at_min=${fromSec}&created_at_max=${toSec}`;
   for (let page = 1; page <= maxPages; page++) {
-    const j = await nbGet(`/finances?page=${page}&limit=${limit}`);
+    const j = await nbGet(`/finances?page=${page}&limit=${limit}${range}`);
     const list = extractList(j);
     if (!Array.isArray(list) || list.length === 0) break;
     if (!sample) sample = list[0];
