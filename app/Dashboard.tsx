@@ -152,6 +152,7 @@ export default function Dashboard() {
   const custom = !!(fromInput && toInput);
 
   const days = pl?.days || [];
+  const countries = pl?.countries || [];
   const totals = pl?.totals || {};
 
   const NON_COST = EXCLUDED_CATS;
@@ -452,7 +453,7 @@ export default function Dashboard() {
               </>
             )}
 
-            {tab === "pl" && (
+            {tab === "pl" && (<>
               <Card title="Dagelijkse P&L" subtitle={`${days.length} dagen · btw informatief, niet van de winst af`}>
                   {(() => {
                     const missDays = days.filter((d: any) => (d.noCost || 0) > 0);
@@ -536,7 +537,40 @@ export default function Dashboard() {
                     </table>
                   </div>
                 </Card>
-            )}
+
+                {countries.length > 0 && (
+                  <Card title="Break-even ROAS per land" subtitle="omzet ÷ dekkingsbijdrage (omzet − COGS − fees − refunds) per land">
+                    <div className="table-wrap">
+                      <table className="table">
+                        <thead><tr>
+                          <th>Land</th><th className="r">Orders</th><th className="r">AOV</th><th className="r">Omzet</th>
+                          <th className="r">COGS</th><th className="r">Refunds</th><th className="r">Fees</th>
+                          <th className="r">Dekkingsbijdrage</th><th className="r">Marge %</th><th className="r">Break-even ROAS</th>
+                        </tr></thead>
+                        <tbody>
+                          {countries.map((c: any) => (
+                            <tr key={c.country}>
+                              <td className="nowrap strong">{c.country}</td>
+                              <td className="r mono">{c.orders}</td>
+                              <td className="r mono">{eur(c.aov)}</td>
+                              <td className="r mono">{eur(c.revenue)}</td>
+                              <td className="r mono">{eur(c.cogs)}</td>
+                              <td className="r mono dim">{c.refunds ? eur(c.refunds) : "—"}</td>
+                              <td className="r mono dim">{eur(c.fees)}</td>
+                              <td className="r mono">{eur(c.contributionMargin)}</td>
+                              <td className={`r mono ${c.marginPct >= 0 ? "green" : "red"}`}>{numf(c.marginPct, 1)}%</td>
+                              <td className="r mono strong">{c.breakevenRoas > 0 ? numf(c.breakevenRoas) : "—"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <p className="muted" style={{ marginTop: 8 }}>
+                      Break-even ROAS per land = hoeveel omzet je per euro advertentie nodig hebt om quitte te spelen in dat land. Lager = meer marge-ruimte. Ad spend is niet per land bekend, dus dit is de <b>drempel</b>, niet de gerealiseerde ROAS per land.
+                    </p>
+                  </Card>
+                )}
+            </>)}
 
             {tab === "uitgaves" && (() => {
               const q = expSearch.trim().toLowerCase();

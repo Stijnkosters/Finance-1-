@@ -35,6 +35,7 @@ function round(n: number) {
 }
 
 type Bucket = { date: string; orders: number; units: number; revenue: number; btw: number; refunds: number; cogs: number; noCost: number };
+type CountryAgg = { country: string; orders: number; units: number; revenue: number; cogs: number; refunds: number };
 
 async function gatherShop(shop: ShopCfg, from: string, to: string) {
   const costs = COSTS_BY_KEY[shop.costsKey] || {};
@@ -64,6 +65,7 @@ async function gatherShop(shop: ShopCfg, from: string, to: string) {
 
   let nbMatched = 0, nbZero = 0, ordersNoCost = 0, invMatched = 0;
   const byDay: Record<string, Bucket> = {};
+  const byCountry: Record<string, CountryAgg> = {};
   const unmatched: Record<string, { title: string; units: number }> = {};
   const custStats: Record<string, { orders: number; revenue: number }> = {};
 
@@ -74,9 +76,17 @@ async function gatherShop(shop: ShopCfg, from: string, to: string) {
     bucket.orders += 1;
     const orderRev = parseFloat(o.totalPriceSet?.shopMoney?.amount || o.subtotalPriceSet?.shopMoney?.amount || "0");
     const orderTax = parseFloat(o.totalTaxSet?.shopMoney?.amount || "0");
+    const orderRefund = parseFloat(o.totalRefundedSet?.shopMoney?.amount || "0");
     bucket.revenue += orderRev;
     bucket.btw += orderTax;
     // (refunds worden hieronder apart geboekt op de terugbetaaldatum)
+
+    const cc = String(o.shippingAddress?.countryCodeV2 || "??").toUpperCase();
+    if (!byCountry[cc]) byCountry[cc] = { country: cc, orders: 0, units: 0, revenue: 0, cogs: 0, refunds: 0 };
+    const cAgg = byCountry[cc];
+    cAgg.orders += 1;
+    cAgg.revenue += orderRev;
+    cAgg.refunds += orderRefund;
 
     const custId = o.customer?.id || `${shop.id}:guest:${o.id}`;
     if (!custStats[custId]) custStats[custId] = { orders: 0, revenue: 0 };
@@ -98,10 +108,12 @@ async function gatherShop(shop: ShopCfg, from: string, to: string) {
 
     let lineCogs = 0;
     let lineCovered = true;
+    let orderUnits = 0;
     for (const li of o.lineItems?.nodes || []) {
       const vid = li.variant?.id;
       const qty = li.quantity || 0;
       bucket.units += qty;
+      orderUnits += qty;
       const c = vid ? costs[vid] : null;
       if (c) lineCogs += qty * (c.cost || 0);
       else if (vid && !orderCovered) {
@@ -111,7 +123,10 @@ async function gatherShop(shop: ShopCfg, from: string, to: string) {
       }
     }
     // Prioriteit: factuur > NicheBay > costs.json-regels.
-    bucket.cogs += hasInv ? invCost! : hasNb ? nbCost! : lineCogs;
+    const orderCogs = hasInv ? invCost! : hasNb ? nbCost! : lineCogs;
+    bucket.cogs += orderCogs;
+    cAgg.units += orderUnits;
+    cAgg.cogs += orderCogs;
     if (!orderCovered && !lineCovered) { ordersNoCost += 1; bucket.noCost += 1; }
   }
 
@@ -136,12 +151,30 @@ async function gatherShop(shop: ShopCfg, from: string, to: string) {
   const missingCosts = Object.entries(costs).filter(([, c]) => !c.cost).map(([id, c]) => ({ id, title: c.title }));
 
   return {
-    byDay, custStats, adspend, adRes,
+    byDay, byCountry, custStats, adspend, adRes,
     cogsSource, cogsWarning, nbMatched, nbZero, ordersNoCost,
     orderCount: orders.length,
     unmatched: Object.entries(unmatched).map(([id, v]) => ({ id, ...v })),
     missingCosts,
   };
+}
+
+// Break-even ROAS per land = omzet ÷ dekkingsbijdrage (omzet − COGS − fees − refunds).
+// Fees geschat met dezelfde formule als de dag-P&L.
+function finalizeCountries(byCountry: Record<string, CountryAgg>) {
+  return Object.values(byCountry).map((c) => {
+    const fees = c.revenue * FEE_RATE + c.orders * FEE_FIXED;
+    const contrib = c.revenue - c.cogs - fees - c.refunds;
+    const breakevenRoas = contrib > 0 ? round(c.revenue / contrib) : 0;
+    const marginPct = c.revenue > 0 ? round((contrib / c.revenue) * 100) : 0;
+    return {
+      country: c.country, orders: c.orders, units: c.units,
+      revenue: round(c.revenue), cogs: round(c.cogs), refunds: round(c.refunds),
+      fees: round(fees), contributionMargin: round(contrib),
+      breakevenRoas, marginPct,
+      aov: c.orders > 0 ? round(c.revenue / c.orders) : 0,
+    };
+  }).sort((a, b) => b.revenue - a.revenue);
 }
 
 function finalize(byDay: Record<string, Bucket>, adspend: Record<string, number>, custStats: Record<string, { orders: number; revenue: number }>) {
@@ -208,6 +241,7 @@ export type PLResult =
       shop: string;
       range: { from: string; to: string };
       days: any[];
+      countries: any[];
       totals: any;
       perShop: any[];
       adSource: string;
@@ -241,6 +275,7 @@ export async function computePL(shopParam: string, from: string, to: string): Pr
   }
 
   const mergedByDay: Record<string, Bucket> = {};
+  const mergedCountry: Record<string, CountryAgg> = {};
   const mergedAd: Record<string, number> = {};
   const mergedCust: Record<string, { orders: number; revenue: number }> = {};
   const breakdown = { google: 0, bing: 0, manual: 0 };
@@ -257,6 +292,11 @@ export async function computePL(shopParam: string, from: string, to: string): Pr
       if (!mergedByDay[d]) mergedByDay[d] = { date: d, orders: 0, units: 0, revenue: 0, btw: 0, refunds: 0, cogs: 0, noCost: 0 };
       const t = mergedByDay[d];
       t.orders += b.orders; t.units += b.units; t.revenue += b.revenue; t.btw += b.btw; t.refunds += b.refunds; t.cogs += b.cogs; t.noCost += b.noCost;
+    }
+    for (const [cc, c] of Object.entries(g.byCountry)) {
+      if (!mergedCountry[cc]) mergedCountry[cc] = { country: cc, orders: 0, units: 0, revenue: 0, cogs: 0, refunds: 0 };
+      const t = mergedCountry[cc];
+      t.orders += c.orders; t.units += c.units; t.revenue += c.revenue; t.cogs += c.cogs; t.refunds += c.refunds;
     }
     for (const [d, v] of Object.entries(g.adspend)) mergedAd[d] = (mergedAd[d] || 0) + v;
     for (const [k, v] of Object.entries(g.custStats)) {
@@ -314,6 +354,7 @@ export async function computePL(shopParam: string, from: string, to: string): Pr
     shop: shopParam,
     range: { from, to },
     days,
+    countries: finalizeCountries(mergedCountry),
     totals,
     perShop,
     adSource: adSources.join(" · ") || "manual",
