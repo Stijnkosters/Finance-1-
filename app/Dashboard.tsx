@@ -476,11 +476,21 @@ export default function Dashboard() {
                       </div>
                     ) : null;
                   })()}
-                  {supRef && (supRef.total || 0) > 0 && (
-                    <div className="banner info" style={{ marginBottom: 12 }}>
-                      <b>Refunds:</b> €{numf(totals.refunds || 0)} aan klanten terugbetaald · <b>terug van leverancier</b> (NicheBay): €{numf(supRef.total || 0)} → <b>netto refund-kost: €{numf((totals.refunds || 0) - (supRef.total || 0))}</b>. <span className="dim">({supRef.count} credits, USD→EUR dagkoers{supRef.pending ? `, ${supRef.pending} nog in behandeling` : ""})</span>
-                    </div>
-                  )}
+                  {supRef && (supRef.total || 0) > 0 && (() => {
+                    const sup = supRef.total || 0;
+                    const netRef = (totals.refunds || 0) - sup;
+                    const contribNet = (totals.omzet || 0) - (totals.cogs || 0) - (totals.fees || 0) - netRef;
+                    const netBe = contribNet > 0 ? (totals.omzet || 0) / contribNet : 0;
+                    const netWinst = (totals.totalProfit || 0) + sup;
+                    return (
+                      <div className="banner info" style={{ marginBottom: 12 }}>
+                        <b>Refunds:</b> €{numf(totals.refunds || 0)} aan klanten · <b>terug van leverancier</b> (NicheBay): €{numf(sup)} → <b>netto refund-kost €{numf(netRef)}</b>.
+                        <br />
+                        <b>Netto (incl. leverancier-credit):</b> break-even ROAS <b>{numf(netBe)}</b> <span className="dim">(bruto {numf(totals.breakevenRoas || 0)})</span> · winst <b className={netWinst >= 0 ? "green" : "red"}>€{numf(netWinst)}</b> <span className="dim">(bruto €{numf(totals.totalProfit || 0)})</span>.
+                        <span className="dim"> — {supRef.count} credits, USD→EUR dagkoers{supRef.pending ? `, ${supRef.pending} nog in behandeling` : ""}. De tabel hieronder toont de bruto klant-refunds.</span>
+                      </div>
+                    );
+                  })()}
                   <div className="table-wrap">
                     <table className="table">
                       <thead>
