@@ -240,6 +240,7 @@ export default function Dashboard() {
           ["uitgaves", "Uitgaves", Receipt],
           ["vaste", "Vaste lasten", Repeat],
           ["marges", "Marge per product", Package],
+          ["prijs", "Prijswijziging", TrendingUp],
           ["balans", "Vermogen", Wallet],
           ["import", "Importeren", Upload],
         ].map(([k, label, Icon]: any) => (
@@ -260,8 +261,8 @@ export default function Dashboard() {
 
       <main className="main">
         <div className="row-between">
-          <h2 className="h2">{tab === "overzicht" ? "Overzicht" : tab === "pl" ? "Dagelijkse P&L" : tab === "orders" ? "Per order" : tab === "uitgaves" ? "Uitgaves" : tab === "vaste" ? "Vaste lasten" : tab === "marges" ? "Marge per product" : tab === "balans" ? "Vermogen" : "Importeren"}</h2>
-          {tab !== "import" && tab !== "uitgaves" && tab !== "marges" && tab !== "vaste" && (
+          <h2 className="h2">{tab === "overzicht" ? "Overzicht" : tab === "pl" ? "Dagelijkse P&L" : tab === "orders" ? "Per order" : tab === "uitgaves" ? "Uitgaves" : tab === "vaste" ? "Vaste lasten" : tab === "marges" ? "Marge per product" : tab === "prijs" ? "Prijswijziging" : tab === "balans" ? "Vermogen" : "Importeren"}</h2>
+          {tab !== "import" && tab !== "uitgaves" && tab !== "marges" && tab !== "vaste" && tab !== "prijs" && (
             <div className="ctrls">
               <div className="seg">
                 {[["dezemaand", "Deze maand"], ["vandaag", "Vandaag"], ["week", "Week"], ["maand", "30d"], ["kwartaal", "90d"], ["jaar", "Dit jaar"]].map(([v, l]) => (
@@ -664,6 +665,7 @@ export default function Dashboard() {
         {tab === "balans" && <VermogenPanel />}
         {tab === "vaste" && <FixedCosts expenses={data.expenses || []} />}
         {tab === "marges" && <ProductMargins shop={shop} />}
+        {tab === "prijs" && <PriceImpact shop={shop} />}
         {tab === "orders" && <OrdersTab shop={shop} from={getRange().from} to={getRange().to} />}
 
         {tab === "import" && <ImportPanel onDone={load} onReload={reloadData} cats={(data.categories && data.categories.length) ? data.categories : FALLBACK_CATEGORIES} expenses={data.expenses || []} />}
@@ -837,6 +839,206 @@ function OrdersTab({ shop, from, to }: { shop: string; from: string; to: string 
           </table>
         </div>
       </div></div>
+    </div>
+  );
+}
+
+function PriceImpact({ shop }: { shop: string }) {
+  const [products, setProducts] = useState<any[]>([]);
+  const [changes, setChanges] = useState<any[]>([]);
+  const [form, setForm] = useState<any>({ variantId: "", oldPrice: "", newPrice: "", date: new Date().toISOString().slice(0, 10) });
+  const [win, setWin] = useState(30);
+  const [sel, setSel] = useState<any>(null);       // gekozen wijziging
+  const [res, setRes] = useState<any>(null);        // analyse-resultaat
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+
+  const loadList = () => {
+    fetch(`/api/price-impact?shop=${shop}`).then(r => r.json()).then(j => {
+      if (j.ok) { setProducts(j.products || []); setChanges(j.changes || []); }
+    }).catch(() => {});
+  };
+  useEffect(() => { loadList(); setSel(null); setRes(null); }, [shop]);
+
+  const analyze = (change: any, window = win) => {
+    setSel(change); setLoading(true); setErr(""); setRes(null);
+    fetch(`/api/price-impact?shop=${shop}&variantId=${encodeURIComponent(change.variantId)}&date=${change.date}&window=${window}`)
+      .then(r => r.json())
+      .then(j => { if (j.ok) setRes(j); else setErr(j.error || "Kon niet berekenen"); })
+      .catch(e => setErr(String(e)))
+      .finally(() => setLoading(false));
+  };
+
+  const addChange = () => {
+    if (!form.variantId || !form.date) { setErr("Kies een product en een datum."); return; }
+    fetch(`/api/price-impact`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ shop, action: "add", ...form }) })
+      .then(r => r.json()).then(j => {
+        if (j.ok) { setChanges(j.changes || []); setForm({ variantId: "", oldPrice: "", newPrice: "", date: new Date().toISOString().slice(0, 10) }); if (j.entry) analyze(j.entry); }
+        else setErr(j.error || "Vastleggen mislukt");
+      }).catch(e => setErr(String(e)));
+  };
+
+  const delChange = (id: string) => {
+    if (!confirm("Deze prijswijziging verwijderen?")) return;
+    fetch(`/api/price-impact`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ shop, action: "delete", id }) })
+      .then(r => r.json()).then(j => { if (j.ok) { setChanges(j.changes || []); if (sel?.id === id) { setSel(null); setRes(null); } } });
+  };
+
+  const onPickProduct = (vid: string) => {
+    const p = products.find(x => x.variantId === vid);
+    setForm((f: any) => ({ ...f, variantId: vid, oldPrice: p ? String(p.price) : f.oldPrice }));
+  };
+
+  // Verschil-cel: pijl + kleur. good=true → hoger is beter (groen), false → hoger is slechter (rood).
+  const Delta = ({ before, after, good = true, money = false, dec = 0 }: any) => {
+    const d = (after || 0) - (before || 0);
+    if (Math.abs(d) < 0.005) return <span className="muted">—</span>;
+    const up = d > 0;
+    const positive = good ? up : !up;
+    const col = positive ? "var(--up)" : "var(--down)";
+    return <span style={{ color: col, fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 4 }}>
+      {up ? <TrendingUp size={13} /> : <TrendingDown size={13} />}{(up ? "+" : "") + (money ? eur(d) : numf(d, dec))}
+    </span>;
+  };
+
+  const cell: any = { padding: "8px 12px", textAlign: "right", fontVariantNumeric: "tabular-nums" };
+  const th: any = { padding: "8px 12px", textAlign: "left", color: "var(--muted, #888)", fontSize: 12, fontWeight: 600 };
+
+  return (
+    <div className="fixed-wrap">
+      <p className="muted" style={{ marginTop: 0, maxWidth: 720 }}>
+        Leg een prijswijziging vast, dan zie je het effect: een periode <b>vóór</b> vs een even lange periode <b>ná</b> de wijziging.
+        De <b>productwinst</b> is per product (excl. ads); <b>totale winst</b> en <b>ROAS</b> zijn store-breed (ads worden niet per product gemeten).
+      </p>
+
+      {/* Vastleggen */}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card-body" style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 240, flex: 1 }}>
+            <span className="muted" style={{ fontSize: 12 }}>Product</span>
+            <select value={form.variantId} onChange={e => onPickProduct(e.target.value)} style={{ padding: "8px 10px" }}>
+              <option value="">— kies een product —</option>
+              {products.map(p => <option key={p.variantId} value={p.variantId}>{p.title}</option>)}
+            </select>
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4, width: 110 }}>
+            <span className="muted" style={{ fontSize: 12 }}>Oude prijs €</span>
+            <input type="number" step="0.01" value={form.oldPrice} onChange={e => setForm({ ...form, oldPrice: e.target.value })} style={{ padding: "8px 10px" }} />
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4, width: 110 }}>
+            <span className="muted" style={{ fontSize: 12 }}>Nieuwe prijs €</span>
+            <input type="number" step="0.01" value={form.newPrice} onChange={e => setForm({ ...form, newPrice: e.target.value })} style={{ padding: "8px 10px" }} />
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4, width: 150 }}>
+            <span className="muted" style={{ fontSize: 12 }}>Datum wijziging</span>
+            <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} style={{ padding: "8px 10px" }} />
+          </label>
+          <button onClick={addChange} style={{ padding: "9px 18px", fontWeight: 600, font: "inherit", fontSize: 13, border: "1px solid var(--accent, #3E6E31)", borderRadius: 10, background: "var(--accent, #3E6E31)", color: "#fff", cursor: "pointer" }}>Vastleggen</button>
+        </div>
+      </div>
+
+      {err && <div className="card" style={{ marginBottom: 16 }}><div className="card-body"><span className="err">{err}</span></div></div>}
+
+      {/* Lijst met vastgelegde wijzigingen */}
+      {changes.length === 0 ? (
+        <p className="muted">Nog geen prijswijzigingen vastgelegd. Leg er hierboven één vast om het effect te zien.</p>
+      ) : (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-body" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {changes.map(c => (
+              <div key={c.id} onClick={() => analyze(c)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 8, cursor: "pointer", background: sel?.id === c.id ? "var(--card2, rgba(120,120,120,.12))" : "transparent" }}>
+                <b style={{ flex: 1 }}>{c.title}</b>
+                <span className="mono">{eur(c.oldPrice)} → {eur(c.newPrice)}</span>
+                <span className="muted" style={{ width: 100, textAlign: "right" }}>{ddmmyyyy(c.date)}</span>
+                <button onClick={(e) => { e.stopPropagation(); delChange(c.id); }} title="Verwijderen" style={{ border: "none", background: "none", cursor: "pointer", color: "var(--down)" }}><Trash2 size={14} /></button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Analyse */}
+      {sel && (
+        <>
+          <div className="seg" style={{ marginBottom: 14 }}>
+            {[14, 30, 60].map(w => (
+              <button key={w} className={win === w ? "on" : ""} onClick={() => { setWin(w); analyze(sel, w); }}>{w} dagen</button>
+            ))}
+          </div>
+
+          {loading && <p className="muted">Berekenen…</p>}
+          {res && (
+            <>
+              {!res.volledig && (
+                <div className="card" style={{ marginBottom: 14 }}><div className="card-body" style={{ fontSize: 13 }}>
+                  ⏳ Er zijn sinds de wijziging pas <b>{res.afterDays} dagen</b> verstreken. We vergelijken eerlijk over <b>{res.afterDays} dagen</b> vóór vs ná (nog niet de volle {res.window}).
+                </div></div>
+              )}
+
+              {/* PRODUCT */}
+              <div className="card" style={{ marginBottom: 14 }}>
+                <div className="card-body">
+                  <h3 style={{ margin: "0 0 4px" }}>{res.title} — per product</h3>
+                  <p className="muted" style={{ marginTop: 0, fontSize: 12 }}>Alleen dit product · excl. advertentiekosten</p>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+                    <thead><tr>
+                      <th style={th}></th>
+                      <th style={{ ...th, textAlign: "right" }}>Vóór ({res.afterDays}d)</th>
+                      <th style={{ ...th, textAlign: "right" }}>Ná ({res.afterDays}d)</th>
+                      <th style={{ ...th, textAlign: "right" }}>Verschil</th>
+                    </tr></thead>
+                    <tbody>
+                      {[
+                        ["Verkochte stuks", "units", false, true],
+                        ["Omzet", "revenue", true, true],
+                        ["COGS (inkoop)", "cogs", true, false],
+                        ["Productwinst", "winst", true, true],
+                      ].map(([label, key, money, good]: any) => (
+                        <tr key={key} style={{ borderTop: "1px solid var(--line, #eee)" }}>
+                          <td style={{ padding: "8px 12px", fontWeight: key === "winst" ? 700 : 400 }}>{label}</td>
+                          <td style={cell}>{money ? eur(res.product.before[key]) : res.product.before[key]}</td>
+                          <td style={{ ...cell, fontWeight: key === "winst" ? 700 : 400 }}>{money ? eur(res.product.after[key]) : res.product.after[key]}</td>
+                          <td style={cell}><Delta before={res.product.before[key]} after={res.product.after[key]} good={good} money={money} /></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* STORE */}
+              <div className="card">
+                <div className="card-body">
+                  <h3 style={{ margin: "0 0 4px" }}>Hele shop ({res.shop}) — advertentie-effect</h3>
+                  <p className="muted" style={{ marginTop: 0, fontSize: 12 }}>Store-breed in dezelfde periode · totale winst is inclusief ads</p>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+                    <thead><tr>
+                      <th style={th}></th>
+                      <th style={{ ...th, textAlign: "right" }}>Vóór ({res.afterDays}d)</th>
+                      <th style={{ ...th, textAlign: "right" }}>Ná ({res.afterDays}d)</th>
+                      <th style={{ ...th, textAlign: "right" }}>Verschil</th>
+                    </tr></thead>
+                    <tbody>
+                      <tr style={{ borderTop: "1px solid var(--line, #eee)" }}>
+                        <td style={{ padding: "8px 12px", fontWeight: 700 }}>Totale winst</td>
+                        <td style={cell}>{eur(res.store.before.totalProfit)}</td>
+                        <td style={{ ...cell, fontWeight: 700 }}>{eur(res.store.after.totalProfit)}</td>
+                        <td style={cell}><Delta before={res.store.before.totalProfit} after={res.store.after.totalProfit} good money /></td>
+                      </tr>
+                      <tr style={{ borderTop: "1px solid var(--line, #eee)" }}>
+                        <td style={{ padding: "8px 12px", fontWeight: 700 }}>ROAS</td>
+                        <td style={cell}>{numf(res.store.before.roas, 2)}</td>
+                        <td style={{ ...cell, fontWeight: 700 }}>{numf(res.store.after.roas, 2)}</td>
+                        <td style={cell}><Delta before={res.store.before.roas} after={res.store.after.roas} good dec={2} /></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
+        </>
+      )}
     </div>
   );
 }
