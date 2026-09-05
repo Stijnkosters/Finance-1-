@@ -228,3 +228,6 @@ tr.excl .rowdesc, tr.excl .mono { color: var(--down,#CE2C2C); }
 /* Compacte order-tabel zodat alle kolommen (incl. break-even) passen */
 .otable th, .otable td { padding: 8px 9px; font-size: 12.5px; }
 .otable th { font-size: 10.5px; }
+
+.spin{animation:spin 0.8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}

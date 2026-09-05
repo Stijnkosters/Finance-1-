@@ -852,13 +852,24 @@ function PriceImpact({ shop }: { shop: string }) {
   const [res, setRes] = useState<any>(null);        // analyse-resultaat
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
+  const [lastCheck, setLastCheck] = useState<string | null>(null);
+  const [autoEnabled, setAutoEnabled] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [showManual, setShowManual] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
 
   const loadList = () => {
+    setSyncing(true);
     fetch(`/api/price-impact?shop=${shop}`).then(r => r.json()).then(j => {
-      if (j.ok) { setProducts(j.products || []); setChanges(j.changes || []); }
-    }).catch(() => {});
+      if (j.ok) { setProducts(j.products || []); setChanges(j.changes || []); setLastCheck(j.lastCheck || null); setAutoEnabled(j.autoEnabled !== false); }
+    }).catch(() => {}).finally(() => setSyncing(false));
   };
   useEffect(() => { loadList(); setSel(null); setRes(null); }, [shop]);
+
+  const saveDate = (id: string, date: string) => {
+    fetch(`/api/price-impact`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ shop, action: "editDate", id, date }) })
+      .then(r => r.json()).then(j => { if (j.ok) { setChanges(j.changes || []); setEditId(null); if (sel?.id === id) analyze({ ...sel, date }); } });
+  };
 
   const analyze = (change: any, window = win) => {
     setSel(change); setLoading(true); setErr(""); setRes(null);
@@ -906,12 +917,36 @@ function PriceImpact({ shop }: { shop: string }) {
 
   return (
     <div className="fixed-wrap">
-      <p className="muted" style={{ marginTop: 0, maxWidth: 720 }}>
-        Leg een prijswijziging vast, dan zie je het effect: een periode <b>vóór</b> vs een even lange periode <b>ná</b> de wijziging.
-        De <b>productwinst</b> is per product (excl. ads); <b>totale winst</b> en <b>ROAS</b> zijn store-breed (ads worden niet per product gemeten).
+      {/* Automatisch-status */}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card-body" style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ flex: 1, minWidth: 260 }}>
+            <div style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ width: 9, height: 9, borderRadius: "50%", background: autoEnabled ? "var(--up)" : "var(--down)", display: "inline-block" }} />
+              {autoEnabled ? "Automatisch — ik houd de Shopify-prijzen zelf bij" : "Automatisch bijhouden staat uit"}
+            </div>
+            <div className="muted" style={{ padding: 0, marginTop: 3, fontSize: 13 }}>
+              {autoEnabled
+                ? <>Zodra je in Shopify een prijs wijzigt, verschijnt die hier vanzelf (datum = wanneer ik het opmerk). {lastCheck ? <>Laatst gecheckt: <b>{new Date(lastCheck).toLocaleString("nl-NL", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</b>.</> : "Eerste keer: ik leg nu de huidige prijzen vast als startpunt."}</>
+                : <>Er is nog geen opslag (DATA_DIR) ingesteld, dus ik kan prijzen niet onthouden. Zet een Railway Volume + DATA_DIR aan, dan gaat dit vanzelf.</>}
+            </div>
+          </div>
+          <button onClick={loadList} disabled={syncing} title="Nu checken" style={{ display: "inline-flex", alignItems: "center", gap: 6, font: "inherit", fontSize: 13, fontWeight: 600, padding: "8px 14px", border: "1px solid var(--line)", borderRadius: 10, background: "var(--card)", color: "var(--ink)", cursor: "pointer", opacity: syncing ? .6 : 1 }}>
+            <RefreshCw size={14} className={syncing ? "spin" : ""} /> {syncing ? "Checken…" : "Nu checken"}
+          </button>
+          <button onClick={() => setShowManual(v => !v)} style={{ font: "inherit", fontSize: 13, fontWeight: 600, padding: "8px 14px", border: "1px dashed var(--line)", borderRadius: 10, background: "transparent", color: "var(--accent)", cursor: "pointer" }}>
+            {showManual ? "Handmatig sluiten" : "Handmatig toevoegen"}
+          </button>
+        </div>
+      </div>
+
+      <p className="muted" style={{ marginTop: 0, maxWidth: 720, paddingTop: 0 }}>
+        Klik een wijziging aan om het effect te zien: een periode <b>vóór</b> vs een even lange periode <b>ná</b>.
+        De <b>productwinst</b> is per product (excl. ads); <b>totale winst</b> en <b>ROAS</b> zijn store-breed.
       </p>
 
-      {/* Vastleggen */}
+      {/* Handmatig vastleggen (optioneel — bv. een datum backfillen) */}
+      {showManual && (
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="card-body" style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
           <label style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 240, flex: 1 }}>
@@ -936,20 +971,28 @@ function PriceImpact({ shop }: { shop: string }) {
           <button onClick={addChange} style={{ padding: "9px 18px", fontWeight: 600, font: "inherit", fontSize: 13, border: "1px solid var(--accent, #3E6E31)", borderRadius: 10, background: "var(--accent, #3E6E31)", color: "#fff", cursor: "pointer" }}>Vastleggen</button>
         </div>
       </div>
+      )}
 
       {err && <div className="card" style={{ marginBottom: 16 }}><div className="card-body"><span className="err">{err}</span></div></div>}
 
       {/* Lijst met vastgelegde wijzigingen */}
       {changes.length === 0 ? (
-        <p className="muted">Nog geen prijswijzigingen vastgelegd. Leg er hierboven één vast om het effect te zien.</p>
+        <p className="muted">Nog geen prijswijzigingen opgemerkt. Zodra je in Shopify een prijs aanpast, verschijnt die hier automatisch — je hoeft niks te doen.</p>
       ) : (
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="card-body" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {changes.map(c => (
               <div key={c.id} onClick={() => analyze(c)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 8, cursor: "pointer", background: sel?.id === c.id ? "var(--card2, rgba(120,120,120,.12))" : "transparent" }}>
+                {c.auto
+                  ? <span title="Automatisch opgemerkt" style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: .3, padding: "2px 7px", borderRadius: 20, background: "var(--up-soft, #E7F4EC)", color: "var(--up)" }}>AUTO</span>
+                  : <span title="Handmatig toegevoegd" style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: .3, padding: "2px 7px", borderRadius: 20, background: "var(--accent-soft, #ECEDFB)", color: "var(--accent)" }}>HAND</span>}
                 <b style={{ flex: 1 }}>{c.title}</b>
                 <span className="mono">{eur(c.oldPrice)} → {eur(c.newPrice)}</span>
-                <span className="muted" style={{ width: 100, textAlign: "right" }}>{ddmmyyyy(c.date)}</span>
+                {editId === c.id ? (
+                  <input type="date" defaultValue={c.date} autoFocus onClick={e => e.stopPropagation()} onChange={e => saveDate(c.id, e.target.value)} style={{ padding: "4px 8px", font: "inherit", fontSize: 12 }} />
+                ) : (
+                  <button onClick={(e) => { e.stopPropagation(); setEditId(c.id); }} title="Datum corrigeren" className="muted" style={{ width: 104, textAlign: "right", border: "none", background: "none", cursor: "pointer", padding: 0, fontSize: 13 }}>{ddmmyyyy(c.date)} ✎</button>
+                )}
                 <button onClick={(e) => { e.stopPropagation(); delChange(c.id); }} title="Verwijderen" style={{ border: "none", background: "none", cursor: "pointer", color: "var(--down)" }}><Trash2 size={14} /></button>
               </div>
             ))}

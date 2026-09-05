@@ -3,14 +3,16 @@ import { shopifyGraphQL } from "@/lib/shopify";
 import { getShop } from "@/lib/shops";
 import { resolveShopifyCfg, shopHasCredentials } from "@/lib/shopifyAuth";
 import { computePL } from "@/lib/pl";
-import { readJson, writeJson } from "@/lib/store";
+import { readJson, writeJson, persistenceEnabled } from "@/lib/store";
 import costsDrivemax from "@/data/costs.json";
 import costsHomivo from "@/data/costs-homivo.json";
 
 // ============================================================
 // PRIJSWIJZIGING — EFFECT METEN (vóór vs ná)
-// Je legt een prijswijziging vast (product, oude → nieuwe prijs, datum). Daarna vergelijkt deze route een
-// periode VÓÓR met een even lange periode NÁ de wijziging:
+// De app houdt prijzen AUTOMATISCH bij: bij elke keer dat deze tab laadt, leest 'ie de huidige Shopify-prijzen
+// en vergelijkt ze met de vorige keer. Verandert een prijs, dan legt 'ie dat zelf vast (datum = moment van
+// detecteren). Je hoeft dus niets handmatig te doen — al kun je een datum corrigeren of handmatig toevoegen.
+// Daarna vergelijkt deze route een periode VÓÓR met een even lange periode NÁ de wijziging:
 //   • per product: verkochte stuks, omzet, COGS en productwinst (omzet − COGS − ~1,8% betaalkosten;
 //     EXCLUSIEF ads, want ad-spend wordt niet per product bijgehouden).
 //   • store-breed (zelfde vensters): totale winst (incl. ads) + ROAS — zo zie je het advertentie-effect.
@@ -29,6 +31,16 @@ const COSTS_BY_KEY: Record<string, Record<string, { title: string; price: number
 };
 
 const LOG_FILE = (shop: string) => `price-changes-${shop}.json`;
+const SNAP_FILE = (shop: string) => `price-snapshot-${shop}.json`;
+
+// Alle huidige variant-prijzen uit Shopify (voor automatische detectie van prijswijzigingen).
+const VARIANTS_Q = `
+query Variants($cursor: String) {
+  productVariants(first: 250, after: $cursor) {
+    pageInfo { hasNextPage endCursor }
+    nodes { id price displayName product { title } }
+  }
+}`;
 
 const ORDERS_Q = `
 query Orders($cursor: String, $q: String) {
@@ -74,24 +86,95 @@ async function productWindow(shopifyCfg: any, variantId: string, from: string, t
   return { units, revenue: Math.round(revenue * 100) / 100 };
 }
 
+// AUTOMATISCHE DETECTIE: lees huidige Shopify-prijzen, vergelijk met de vorige snapshot, en leg elke
+// gewijzigde prijs zelf vast. Eerste keer = alleen een baseline opslaan (geen "wijzigingen" verzinnen).
+// Retourneert het (mogelijk aangevulde) wijzigingen-logboek + wanneer er voor het laatst gecheckt is.
+async function syncPrices(shopParam: string, shopifyCfg: any) {
+  const changes: any[] = await readJson(LOG_FILE(shopParam), []);
+  // Zonder opslag (DATA_DIR) kunnen we niets onthouden → sla detectie stil over.
+  if (!persistenceEnabled()) return { changes, lastCheck: null as string | null, detected: 0, baseline: false, stored: false };
+
+  // Huidige prijzen ophalen.
+  const current: Record<string, { price: number; title: string }> = {};
+  let cursor: string | null = null;
+  for (let i = 0; i < 40; i++) {
+    const data = await shopifyGraphQL(VARIANTS_Q, { cursor }, shopifyCfg);
+    const conn = data.productVariants;
+    for (const v of conn.nodes) {
+      const price = parseFloat(v.price || "0") || 0;
+      const title = v.product?.title || v.displayName || v.id;
+      current[v.id] = { price, title };
+    }
+    if (!conn.pageInfo.hasNextPage) break;
+    cursor = conn.pageInfo.endCursor;
+  }
+
+  const snap: any = await readJson(SNAP_FILE(shopParam), null);
+  const now = new Date();
+  const today = ymd(now);
+
+  // Eerste run: alleen baseline vastleggen.
+  if (!snap || !snap.prices) {
+    await writeJson(SNAP_FILE(shopParam), { updatedAt: now.toISOString(), prices: current });
+    return { changes, lastCheck: now.toISOString(), detected: 0, baseline: true, stored: true };
+  }
+
+  // Diff: prijs anders dan vorige snapshot → automatisch vastleggen.
+  const detected: any[] = [];
+  for (const [vid, cur] of Object.entries(current)) {
+    const prev = snap.prices[vid];
+    if (!prev) continue; // nieuw product → alleen in baseline opnemen, niet als "wijziging"
+    if (Math.abs((prev.price || 0) - cur.price) >= 0.005) {
+      detected.push({
+        id: `auto-${Date.now().toString(36)}-${vid.split("/").pop()}`,
+        variantId: vid,
+        title: cur.title,
+        oldPrice: Math.round((prev.price || 0) * 100) / 100,
+        newPrice: Math.round(cur.price * 100) / 100,
+        date: today,
+        auto: true,
+        createdAt: now.toISOString(),
+      });
+    }
+  }
+
+  let nextChanges = changes;
+  if (detected.length) nextChanges = [...detected, ...changes];
+  // Snapshot bijwerken naar de nieuwe prijzen (ook als er niets veranderde: updatedAt verversen).
+  await writeJson(SNAP_FILE(shopParam), { updatedAt: now.toISOString(), prices: current });
+  if (detected.length) await writeJson(LOG_FILE(shopParam), nextChanges);
+
+  return { changes: nextChanges, lastCheck: now.toISOString(), detected: detected.length, baseline: false, stored: true };
+}
+
 // GET: lijst met vastgelegde wijzigingen + producten voor de kiezer. Met variantId+date+window → de analyse.
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const shopParam = searchParams.get("shop") || "drivemax";
     const costs = COSTS_BY_KEY[getShop(shopParam).costsKey] || {};
-    const changes: any[] = await readJson(LOG_FILE(shopParam), []);
 
     const variantId = searchParams.get("variantId");
     const date = searchParams.get("date");
     const window = Math.min(Math.max(parseInt(searchParams.get("window") || "30", 10) || 30, 1), 180);
 
-    // Zonder analyse-params: alleen de logboek-lijst + producten voor de dropdown teruggeven.
+    // Zonder analyse-params: eerst automatisch nieuwe Shopify-prijzen detecteren, dan lijst + producten teruggeven.
     if (!variantId || !date) {
+      const shopCfg = getShop(shopParam);
+      let changes: any[] = await readJson(LOG_FILE(shopParam), []);
+      let lastCheck: string | null = null;
+      let autoBaseline = false;
+      if (await shopHasCredentials(shopCfg)) {
+        try {
+          const shopifyCfg = await resolveShopifyCfg(shopCfg);
+          const sync = await syncPrices(shopParam, shopifyCfg);
+          changes = sync.changes; lastCheck = sync.lastCheck; autoBaseline = sync.baseline;
+        } catch { /* detectie faalt niet-blokkerend; toon in elk geval de bestaande lijst */ }
+      }
       const products = Object.entries(costs)
         .map(([id, c]) => ({ variantId: id, title: c.title, price: c.price, cost: c.cost }))
         .sort((a, b) => (a.title || "").localeCompare(b.title || ""));
-      return NextResponse.json({ ok: true, shop: shopParam, changes, products });
+      return NextResponse.json({ ok: true, shop: shopParam, changes, products, lastCheck, autoBaseline, autoEnabled: persistenceEnabled() });
     }
 
     // ── ANALYSE: vóór vs ná ──────────────────────────────────────────────
@@ -150,6 +233,14 @@ export async function POST(req: Request) {
 
     if (action === "delete") {
       const next = changes.filter((c) => String(c.id) !== String(body.id));
+      await writeJson(LOG_FILE(shopParam), next);
+      return NextResponse.json({ ok: true, changes: next });
+    }
+
+    if (action === "editDate") {
+      const date = String(body.date || "").trim();
+      if (!date) return NextResponse.json({ ok: false, error: "Geen datum opgegeven." }, { status: 400 });
+      const next = changes.map((c) => (String(c.id) === String(body.id) ? { ...c, date } : c));
       await writeJson(LOG_FILE(shopParam), next);
       return NextResponse.json({ ok: true, changes: next });
     }
