@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { parseBankCsv, dedupKey, SOURCES, classifyTx } from "@/lib/bankparse";
 import { readJson, writeJson, persistenceEnabled } from "@/lib/store";
-import { decorate } from "@/lib/meta";
+import { decorate, expenseId } from "@/lib/meta";
 import { toEUR } from "@/lib/fx";
 
 export const dynamic = "force-dynamic";
@@ -140,9 +140,20 @@ export async function DELETE(req: Request) {
     if (!persistenceEnabled()) {
       return NextResponse.json({ ok: false, error: "Geen opslag actief." }, { status: 400 });
     }
-    const what = new URL(req.url).searchParams.get("what");
-    if (what === "pending") await writeJson("pending-import.json", []);
-    else if (what === "income") await writeJson("income.json", []);
+    const url = new URL(req.url);
+    const what = url.searchParams.get("what");
+    if (what === "pending") {
+      // ?ids=a,b,c -> alleen die regels uit de wachtrij halen; anders de hele wachtrij
+      const idsParam = url.searchParams.get("ids");
+      if (idsParam) {
+        const ids = new Set(idsParam.split(",").map((s) => s.trim()).filter(Boolean));
+        const pending: any[] = await readJson("pending-import.json", []);
+        const kept = pending.filter((e) => !ids.has(expenseId(e)));
+        await writeJson("pending-import.json", kept);
+        return NextResponse.json({ ok: true, removed: pending.length - kept.length });
+      }
+      await writeJson("pending-import.json", []);
+    } else if (what === "income") await writeJson("income.json", []);
     else await writeJson("imported-expenses.json", []);
     return NextResponse.json({ ok: true });
   } catch (e: any) {

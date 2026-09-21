@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, ReferenceLine, Cell,
@@ -154,6 +154,7 @@ export default function Dashboard() {
   const days = pl?.days || [];
   const countries = pl?.countries || [];
   const totals = pl?.totals || {};
+  const [openRefund, setOpenRefund] = useState<string | null>(null);
 
   const NON_COST = EXCLUDED_CATS;
   const expensesInRange = useMemo(() => {
@@ -528,14 +529,23 @@ export default function Dashboard() {
                           const cm = (d.omzet || 0) - (d.cogs || 0) - (d.fees || 0) - (d.refunds || 0);
                           const be = cm > 0 ? d.revenue / cm : null;
                           const roasOk = be != null && d.roas ? d.roas >= be : null;
+                          const refList = d.refundList || [];
+                          const refOpen = openRefund === d.date;
                           return (
-                          <tr key={d.date}>
+                          <Fragment key={d.date}>
+                          <tr>
                             <td className="nowrap">{ddmmyyyy(d.date)}</td>
                             <td className="r mono">{d.orders}</td>
                             <td className="r mono">{d.orders ? eur(d.aov) : "—"}</td>
                             <td className="r mono">{eur(d.omzet)}</td>
                             <td className="r mono amber">{d.btw ? eur(d.btw) : "—"}</td>
-                            <td className="r mono dim">{d.refunds ? eur(d.refunds) : "—"}</td>
+                            <td className="r mono dim">
+                              {d.refunds
+                                ? (refList.length
+                                    ? <button type="button" className={`refbtn ${refOpen ? "open" : ""}`} onClick={() => setOpenRefund(refOpen ? null : d.date)} title="Bekijk welke klanten refund kregen">{eur(d.refunds)} <span className="refcaret">{refOpen ? "▲" : "▼"}</span></button>
+                                    : eur(d.refunds))
+                                : "—"}
+                            </td>
                             <td className="r mono">
                               {eur(d.cogs)}
                               {d.noCost > 0 && (
@@ -554,6 +564,26 @@ export default function Dashboard() {
                             <td className={`r mono ${roasOk === null ? "" : roasOk ? "green" : "red"}`}>{d.roas ? numf(d.roas) : "—"}</td>
                             <td className="r mono dim">{be != null ? numf(be) : "—"}</td>
                           </tr>
+                          {refOpen && refList.length > 0 && (
+                            <tr className="refdetail">
+                              <td colSpan={14}>
+                                <div className="refdetail-wrap">
+                                  <div className="refdetail-head">Refunds op {ddmmyyyy(d.date)} · {refList.length} {refList.length > 1 ? "klanten" : "klant"}</div>
+                                  {refList.map((r: any, i: number) => (
+                                    <div className="refrow" key={i}>
+                                      <span className="refcust">{r.customer}{pl?.shop === "totaal" && r.shop ? <span className="dim"> · {r.shop}</span> : null}</span>
+                                      <span className="reforder dim">{r.order ? `#${r.order}` : ""}</span>
+                                      <span className="refamt mono">{eur(r.amount)}</span>
+                                      {r.email
+                                        ? <a className="refmail" href={`mailto:${r.email}`} title="Mail deze klant">{r.email}</a>
+                                        : <span className="refmail dim">geen e-mail</span>}
+                                    </div>
+                                  ))}
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                          </Fragment>
                         );})}
                       </tbody>
                       {days.length > 0 && (
@@ -614,9 +644,20 @@ export default function Dashboard() {
                 )}
             </>)}
 
+            {tab === "uitgaves" && (
+              <ManualExpenses
+                rows={(data.expenses || []).filter((e: any) => e.manual)}
+                cats={(data.categories && data.categories.length) ? data.categories : FALLBACK_CATEGORIES}
+                methods={Array.from(new Set((data.expenses || []).map((e: any) => e.methode).filter(Boolean))) as string[]}
+                month={expMonth}
+                onChange={reloadData}
+              />
+            )}
+
             {tab === "uitgaves" && (() => {
               const q = expSearch.trim().toLowerCase();
               const rows = [...(data.expenses || [])]
+                .filter((e: any) => !e.manual)
                 .filter((e: any) => !expMonth || (e.date || "").startsWith(expMonth))
                 .filter((e: any) => !expMethod || e.methode === expMethod)
                 .filter((e: any) => !q || [e.label, e.raw, e.category, e.methode, e.note]
@@ -671,6 +712,115 @@ export default function Dashboard() {
         {tab === "import" && <ImportPanel onDone={load} onReload={reloadData} cats={(data.categories && data.categories.length) ? data.categories : FALLBACK_CATEGORIES} expenses={data.expenses || []} />}
       </main>
     </div>
+  );
+}
+
+const STORE_OPTS = [
+  { v: "algemeen", l: "Algemeen" },
+  { v: "drivemax", l: "Drivemax" },
+  { v: "homivo", l: "Homivo" },
+];
+const BEOORD_OPTS = [
+  { v: "", l: "—" },
+  { v: "goed", l: "Goed" },
+  { v: "slecht", l: "Slecht" },
+];
+const METHOD_PRESETS = ["AMEX", "RABO", "RABO-CC", "WISE", "REVOLUT"];
+
+function ManualExpenses({ rows, cats, methods, month, onChange }: any) {
+  const today = new Date().toISOString().slice(0, 10);
+  const blank = { date: today, omschrijving: "", methode: "RABO", bedrag: "", category: "Overig", store: "algemeen", beoordeling: "", note: "" };
+  const [form, setForm] = useState<any>(blank);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const methodOpts = Array.from(new Set([...METHOD_PRESETS, ...(methods || [])]));
+  const shown = (rows || [])
+    .filter((r: any) => !month || (r.date || "").startsWith(month))
+    .sort((a: any, b: any) => (b.date || "").localeCompare(a.date || ""));
+
+  const save = async (payload: any) => {
+    setBusy(true); setErr(null);
+    try {
+      const r = await fetch(`/api/manual-expense`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }).then((x) => x.json());
+      if (!r.ok) throw new Error(r.error || "Opslaan mislukt");
+      await onChange();
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  };
+
+  const add = async () => {
+    if (!String(form.omschrijving).trim()) { setErr("Vul een omschrijving in."); return; }
+    if (form.bedrag === "" || isNaN(Number(form.bedrag))) { setErr("Vul een geldig bedrag in."); return; }
+    await save({ ...form, bedrag: Number(form.bedrag) });
+    setForm({ ...blank, date: form.date, methode: form.methode, store: form.store });
+  };
+
+  const editRow = (r: any, patch: any) =>
+    save({ uid: r.uid, date: r.date, omschrijving: r.omschrijving, methode: r.methode, bedrag: r.bedrag, category: r.category, store: r.store, beoordeling: r.beoordeling, note: r.note, ...patch });
+
+  const del = async (r: any) => {
+    if (!confirm("Deze regel verwijderen?")) return;
+    setBusy(true); setErr(null);
+    try {
+      const x = await fetch(`/api/manual-expense`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ uid: r.uid }) }).then((y) => y.json());
+      if (!x.ok) throw new Error(x.error || "Verwijderen mislukt");
+      await onChange();
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  };
+
+  const zakelijk = shown.filter((r: any) => r.category !== "Privé").reduce((a: number, r: any) => a + (r.bedrag || 0), 0);
+  const slecht = shown.filter((r: any) => r.beoordeling === "slecht" && r.category !== "Privé").reduce((a: number, r: any) => a + (r.bedrag || 0), 0);
+
+  return (
+    <Card title="Handmatige uitgaves" subtitle={`jouw eigen sheet · ${shown.length} regels · zakelijk ${eur(zakelijk)}${slecht ? ` · als slecht gemarkeerd ${eur(slecht)}` : ""}`}>
+      <div className="manform">
+        <input className="dinp" type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
+        <input className="dinp manwide" type="text" placeholder="Omschrijving" value={form.omschrijving} onChange={(e) => setForm({ ...form, omschrijving: e.target.value })} onKeyDown={(e) => e.key === "Enter" && add()} />
+        <select className="msel" value={form.methode} onChange={(e) => setForm({ ...form, methode: e.target.value })}>{methodOpts.map((m) => <option key={m} value={m}>{m}</option>)}</select>
+        <input className="dinp r manamt" type="number" step="0.01" placeholder="0,00" value={form.bedrag} onChange={(e) => setForm({ ...form, bedrag: e.target.value })} onKeyDown={(e) => e.key === "Enter" && add()} />
+        <select className="msel" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>{cats.map((c: string) => <option key={c} value={c}>{c}</option>)}</select>
+        <select className="msel" value={form.store} onChange={(e) => setForm({ ...form, store: e.target.value })}>{STORE_OPTS.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}</select>
+        <select className="msel" value={form.beoordeling} onChange={(e) => setForm({ ...form, beoordeling: e.target.value })}>{BEOORD_OPTS.map((o) => <option key={o.v} value={o.v}>{o.l}</option>)}</select>
+        <input className="dinp" type="text" placeholder="Note" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} onKeyDown={(e) => e.key === "Enter" && add()} />
+        <button className="addbtn" onClick={add} disabled={busy}>+ Toevoegen</button>
+      </div>
+      {err && <div className="banner err" style={{ marginTop: 8 }}>{err}</div>}
+      <div className="mansum">
+        {STORE_OPTS.map((s) => {
+          const t = shown.filter((r: any) => r.category !== "Privé" && (r.store || "algemeen") === s.v).reduce((a: number, r: any) => a + (r.bedrag || 0), 0);
+          return t ? <span key={s.v} className="mansum-item">{s.l}: <b>{eur(t)}</b></span> : null;
+        })}
+        {(() => {
+          const p = shown.filter((r: any) => r.category === "Privé").reduce((a: number, r: any) => a + (r.bedrag || 0), 0);
+          return p ? <span className="mansum-item" style={{ opacity: 0.7 }}>Privé (apart, geen bedrijfskost): <b>{eur(p)}</b></span> : null;
+        })()}
+      </div>
+      <div className="table-wrap" style={{ marginTop: 10 }}>
+        <table className="table">
+          <thead><tr>
+            <th>Datum</th><th>Omschrijving</th><th>Methode</th><th className="r">Bedrag</th><th>Categorie</th><th>Store</th><th>Oordeel</th><th>Note</th><th></th>
+          </tr></thead>
+          <tbody>
+            {shown.length === 0 && <tr><td colSpan={9} className="dim center">Nog geen handmatige regels. Voeg hierboven je eerste uitgave toe.</td></tr>}
+            {shown.map((r: any) => (
+              <tr key={r.uid} className={r.beoordeling === "goed" ? "man-goed" : r.beoordeling === "slecht" ? "man-slecht" : ""}>
+                <td className="nowrap"><input className="cellinp" type="date" defaultValue={r.date} onBlur={(e) => e.target.value !== r.date && editRow(r, { date: e.target.value })} /></td>
+                <td><input className="cellinp manwide" defaultValue={r.omschrijving} onBlur={(e) => e.target.value !== r.omschrijving && editRow(r, { omschrijving: e.target.value })} /></td>
+                <td><select className="cellsel" value={r.methode} onChange={(e) => editRow(r, { methode: e.target.value })}>{Array.from(new Set([...METHOD_PRESETS, r.methode].filter(Boolean))).map((m) => <option key={m as string} value={m as string}>{m as string}</option>)}</select></td>
+                <td className="r"><input className="cellinp r manamt" type="number" step="0.01" defaultValue={r.bedrag} onBlur={(e) => Number(e.target.value) !== r.bedrag && editRow(r, { bedrag: Number(e.target.value) })} /></td>
+                <td><select className="cellsel" value={r.category} onChange={(e) => editRow(r, { category: e.target.value })}>{cats.map((c: string) => <option key={c} value={c}>{c}</option>)}</select></td>
+                <td><select className="cellsel" value={r.store || "algemeen"} onChange={(e) => editRow(r, { store: e.target.value })}>{STORE_OPTS.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}</select></td>
+                <td><select className="cellsel" value={r.beoordeling || ""} onChange={(e) => editRow(r, { beoordeling: e.target.value })}>{BEOORD_OPTS.map((o) => <option key={o.v} value={o.v}>{o.l}</option>)}</select></td>
+                <td><input className="cellinp" defaultValue={r.note} onBlur={(e) => e.target.value !== r.note && editRow(r, { note: e.target.value })} /></td>
+                <td className="r"><button className="rowdel" title="Verwijderen" onClick={() => del(r)}>×</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
   );
 }
 
@@ -1601,6 +1751,20 @@ function ImportPanel({ onDone, onReload, cats, expenses }: any) {
     finally { setBusy(false); }
   };
 
+  const removeSelected = async (ids: string[]) => {
+    if (!ids.length) return;
+    if (!confirm(`${ids.length} regel(s) uit de wachtrij verwijderen? Dit kan niet ongedaan worden gemaakt.`)) return;
+    setBusy(true); setErr(null);
+    try {
+      const r = await fetch(`/api/import?what=pending&ids=${encodeURIComponent(ids.join(","))}`, { method: "DELETE" }).then((x) => x.json());
+      if (!r.ok) throw new Error(r.error || "Verwijderen mislukt");
+      setPsel(new Set());
+      await refreshPending();
+      setMsg(`${r.removed ?? ids.length} regel(s) verwijderd.`);
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  };
+
   const reset = async () => {
     if (!confirm("Alle reeds goedgekeurde geïmporteerde uitgaves verwijderen?")) return;
     setBusy(true);
@@ -1980,6 +2144,7 @@ function ImportPanel({ onDone, onReload, cats, expenses }: any) {
             <div className="bulkbar" style={{ background: "var(--up-soft)", borderColor: "var(--up)", color: "var(--up)" }}>
               <span>{psel.size > 0 ? `${psel.size} geselecteerd` : `${pending.length} in wachtrij`}</span>
               {psel.size > 0 && <button className="bulkdel" style={{ background: "var(--up)" }} onClick={() => approve([...psel])} disabled={busy}>✓ Goedkeuren ({psel.size})</button>}
+              {psel.size > 0 && <button className="bulkdel" style={{ background: "var(--down)" }} onClick={() => removeSelected([...psel])} disabled={busy}><Trash2 size={13} /> Verwijder ({psel.size})</button>}
               <button className="bulkclear" onClick={() => approve()} disabled={busy}>Alles goedkeuren</button>
               <button className="bulkclear" onClick={discard} disabled={busy}>Verwerp</button>
             </div>

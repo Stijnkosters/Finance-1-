@@ -35,13 +35,13 @@ query Orders($cursor: String, $q: String) {
       id
       name
       createdAt
-      customer { id }
+      customer { id displayName email }
       shippingAddress { countryCodeV2 }
       subtotalPriceSet { shopMoney { amount } }
       totalPriceSet { shopMoney { amount } }
       totalTaxSet { shopMoney { amount } }
       totalRefundedSet { shopMoney { amount } }
-      refunds { createdAt totalRefundedSet { shopMoney { amount } } }
+      refunds { id createdAt note totalRefundedSet { shopMoney { amount } } }
       lineItems(first: 50) {
         nodes {
           quantity

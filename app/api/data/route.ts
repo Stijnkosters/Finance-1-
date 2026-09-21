@@ -17,12 +17,28 @@ export async function GET() {
     const rulesRaw = await readJson("expense-rules.json", []);
     const rules = Array.isArray(rulesRaw) ? rulesRaw : [];
 
+    const manualRaw = await readJson("manual-expenses.json", []);
+    const manualRows = Array.isArray(manualRaw) ? manualRaw : [];
+
     let expenses: any[] = [];
     try {
       expenses = decorate([...committed, ...imported], meta, rules).filter((e) => !e.deleted);
     } catch {
       expenses = [];
     }
+
+    // Handmatig ingevoerde regels (jouw sheet-manier): tellen mee als kost, maar
+    // worden bewerkt via hun eigen kaart. Categorie + oordeel winnen altijd.
+    const manual = manualRows.map((e: any) => ({
+      ...e,
+      id: e.uid,
+      label: e.omschrijving || "",
+      raw: e.omschrijving || "",
+      note: e.note || "",
+      manual: true,
+      edited: true,
+    }));
+    expenses = [...expenses, ...manual];
 
     return NextResponse.json({
       expenses,

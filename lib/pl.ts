@@ -68,6 +68,7 @@ async function gatherShop(shop: ShopCfg, from: string, to: string) {
   const byCountry: Record<string, CountryAgg> = {};
   const unmatched: Record<string, { title: string; units: number }> = {};
   const custStats: Record<string, { orders: number; revenue: number }> = {};
+  const refundDetails: Record<string, any[]> = {}; // per dag: wie kreeg refund + mailcontact
 
   for (const o of orders) {
     const day = dayKeyAmsterdam(o.createdAt);
@@ -145,13 +146,22 @@ async function gatherShop(shop: ShopCfg, from: string, to: string) {
       if (rfDay < from || rfDay > to) continue; // alleen refunds binnen de periode
       if (!byDay[rfDay]) byDay[rfDay] = { date: rfDay, orders: 0, units: 0, revenue: 0, btw: 0, refunds: 0, cogs: 0, noCost: 0 };
       byDay[rfDay].refunds += amt;
+      (refundDetails[rfDay] ||= []).push({
+        order: String(o.name || "").replace(/^#/, "").trim(),
+        customer: o.customer?.displayName || "Gast",
+        email: o.customer?.email || "",
+        amount: round(amt),
+        note: rf.note || "",
+        at: rf.createdAt,
+        shop: shop.name,
+      });
     }
   }
 
   const missingCosts = Object.entries(costs).filter(([, c]) => !c.cost).map(([id, c]) => ({ id, title: c.title }));
 
   return {
-    byDay, byCountry, custStats, adspend, adRes,
+    byDay, byCountry, custStats, refundDetails, adspend, adRes,
     cogsSource, cogsWarning, nbMatched, nbZero, ordersNoCost,
     orderCount: orders.length,
     unmatched: Object.entries(unmatched).map(([id, v]) => ({ id, ...v })),
@@ -279,6 +289,7 @@ export async function computePL(shopParam: string, from: string, to: string): Pr
   const mergedCountry: Record<string, CountryAgg> = {};
   const mergedAd: Record<string, number> = {};
   const mergedCust: Record<string, { orders: number; revenue: number }> = {};
+  const mergedRefunds: Record<string, any[]> = {};
   const breakdown = { google: 0, bing: 0, manual: 0 };
   const adConv = { google: 0, bing: 0 };
   const adSources: string[] = [];
@@ -300,6 +311,7 @@ export async function computePL(shopParam: string, from: string, to: string): Pr
       const t = mergedCountry[cc];
       t.orders += c.orders; t.units += c.units; t.revenue += c.revenue; t.cogs += c.cogs; t.refunds += c.refunds;
     }
+    for (const [d, list] of Object.entries(g.refundDetails)) (mergedRefunds[d] ||= []).push(...list);
     for (const [d, v] of Object.entries(g.adspend)) mergedAd[d] = (mergedAd[d] || 0) + v;
     for (const [k, v] of Object.entries(g.custStats)) {
       if (!mergedCust[k]) mergedCust[k] = { orders: 0, revenue: 0 };
@@ -323,6 +335,12 @@ export async function computePL(shopParam: string, from: string, to: string): Pr
   }
 
   const { days, totals } = finalize(mergedByDay, mergedAd, mergedCust);
+
+  // Refund-details (klant + mailcontact) aan de juiste dag hangen, hoogste bedrag eerst.
+  for (const day of days) {
+    const list = mergedRefunds[day.date];
+    if (list && list.length) day.refundList = list.sort((a, b) => b.amount - a.amount);
+  }
 
   // Terug van leverancier (NicheBay-refunds, EUR via dagkoers): verreken als
   // lagere refund-kost in ALLE totalen (winst, break-even, marges). De dag-rijen
