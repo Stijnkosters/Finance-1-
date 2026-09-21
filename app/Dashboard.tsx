@@ -724,19 +724,29 @@ const BEOORD_OPTS = [
   { v: "", l: "—" },
   { v: "goed", l: "Goed" },
   { v: "slecht", l: "Slecht" },
+  { v: "nakijken", l: "Nakijken" },
 ];
+const monthLabelNL = (m: string) => {
+  const [y, mo] = m.split("-");
+  return new Date(Number(y), Number(mo) - 1, 1).toLocaleDateString("nl-NL", { month: "long", year: "numeric" });
+};
 const METHOD_PRESETS = ["AMEX", "RABO", "RABO-CC", "WISE", "REVOLUT"];
 
-function ManualExpenses({ rows, cats, methods, month, onChange }: any) {
+function ManualExpenses({ rows, cats, methods, onChange }: any) {
   const today = new Date().toISOString().slice(0, 10);
   const blank = { date: today, omschrijving: "", methode: "RABO", bedrag: "", category: "Overig", store: "algemeen", beoordeling: "", note: "" };
   const [form, setForm] = useState<any>(blank);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  const curMonth = today.slice(0, 7);
+  const [mMonth, setMMonth] = useState<string>(curMonth);
+  const monthsInData = Array.from(new Set((rows || []).map((r: any) => (r.date || "").slice(0, 7)).filter(Boolean)));
+  const monthOpts = Array.from(new Set([curMonth, ...monthsInData])).sort().reverse() as string[];
+
   const methodOpts = Array.from(new Set([...METHOD_PRESETS, ...(methods || [])]));
   const shown = (rows || [])
-    .filter((r: any) => !month || (r.date || "").startsWith(month))
+    .filter((r: any) => mMonth === "all" || (r.date || "").startsWith(mMonth))
     .sort((a: any, b: any) => (b.date || "").localeCompare(a.date || ""));
 
   const save = async (payload: any) => {
@@ -772,9 +782,17 @@ function ManualExpenses({ rows, cats, methods, month, onChange }: any) {
 
   const zakelijk = shown.filter((r: any) => r.category !== "Privé").reduce((a: number, r: any) => a + (r.bedrag || 0), 0);
   const slecht = shown.filter((r: any) => r.beoordeling === "slecht" && r.category !== "Privé").reduce((a: number, r: any) => a + (r.bedrag || 0), 0);
+  const nakijken = shown.filter((r: any) => r.beoordeling === "nakijken").length;
 
   return (
-    <Card title="Handmatige uitgaves" subtitle={`jouw eigen sheet · ${shown.length} regels · zakelijk ${eur(zakelijk)}${slecht ? ` · als slecht gemarkeerd ${eur(slecht)}` : ""}`}>
+    <Card title="Handmatige uitgaves" subtitle={`jouw eigen sheet · ${shown.length} regels · zakelijk ${eur(zakelijk)}${slecht ? ` · slecht ${eur(slecht)}` : ""}${nakijken ? ` · ${nakijken} na te kijken` : ""}`}>
+      <div className="manmonth">
+        <span className="dim">Maand:</span>
+        <select className="msel" value={mMonth} onChange={(e) => setMMonth(e.target.value)}>
+          {monthOpts.map((m) => <option key={m} value={m}>{monthLabelNL(m)}</option>)}
+          <option value="all">Alle maanden</option>
+        </select>
+      </div>
       <div className="manform">
         <input className="dinp" type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
         <input className="dinp manwide" type="text" placeholder="Omschrijving" value={form.omschrijving} onChange={(e) => setForm({ ...form, omschrijving: e.target.value })} onKeyDown={(e) => e.key === "Enter" && add()} />
@@ -805,7 +823,7 @@ function ManualExpenses({ rows, cats, methods, month, onChange }: any) {
           <tbody>
             {shown.length === 0 && <tr><td colSpan={9} className="dim center">Nog geen handmatige regels. Voeg hierboven je eerste uitgave toe.</td></tr>}
             {shown.map((r: any) => (
-              <tr key={r.uid} className={r.beoordeling === "goed" ? "man-goed" : r.beoordeling === "slecht" ? "man-slecht" : ""}>
+              <tr key={r.uid} className={r.beoordeling === "goed" ? "man-goed" : r.beoordeling === "slecht" ? "man-slecht" : r.beoordeling === "nakijken" ? "man-nakijken" : ""}>
                 <td className="nowrap"><input className="cellinp" type="date" defaultValue={r.date} onBlur={(e) => e.target.value !== r.date && editRow(r, { date: e.target.value })} /></td>
                 <td><input className="cellinp manwide" defaultValue={r.omschrijving} onBlur={(e) => e.target.value !== r.omschrijving && editRow(r, { omschrijving: e.target.value })} /></td>
                 <td><select className="cellsel" value={r.methode} onChange={(e) => editRow(r, { methode: e.target.value })}>{Array.from(new Set([...METHOD_PRESETS, r.methode].filter(Boolean))).map((m) => <option key={m as string} value={m as string}>{m as string}</option>)}</select></td>

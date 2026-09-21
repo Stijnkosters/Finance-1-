@@ -267,5 +267,7 @@ tr.excl .rowdesc, tr.excl .mono { color: var(--down,#CE2C2C); }
 .rowdel{font:inherit;font-size:16px;line-height:1;width:26px;height:26px;border:1px solid var(--line);
   border-radius:6px;background:#fff;color:var(--soft);cursor:pointer}
 .rowdel:hover{color:var(--down);border-color:var(--down)}
+.manmonth{display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:13px}
 tr.man-goed td{background:var(--up-soft)}
 tr.man-slecht td{background:var(--down-soft)}
+tr.man-nakijken td{background:var(--amber-soft)}

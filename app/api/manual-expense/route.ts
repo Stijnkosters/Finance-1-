@@ -41,7 +41,7 @@ export async function POST(req: Request) {
       bedrag: Math.round(bedrag * 100) / 100,
       category: String(b.category || "Overig"),
       store: ["drivemax", "homivo", "algemeen"].includes(b.store) ? b.store : "algemeen",
-      beoordeling: ["goed", "slecht"].includes(b.beoordeling) ? b.beoordeling : "",
+      beoordeling: ["goed", "slecht", "nakijken"].includes(b.beoordeling) ? b.beoordeling : "",
       note: String(b.note || "").slice(0, 300),
     };
 
