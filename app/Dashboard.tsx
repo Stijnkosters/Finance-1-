@@ -158,9 +158,12 @@ export default function Dashboard() {
 
   const NON_COST = EXCLUDED_CATS;
   const expensesInRange = useMemo(() => {
-    if (!pl || shop !== "totaal") return [];
+    if (!pl) return [];
     const { from, to } = pl.range;
-    return (data.expenses || []).filter((e: any) => e.date >= from && e.date <= to && !NON_COST.includes(e.category));
+    const inRange = (data.expenses || []).filter((e: any) => e.date >= from && e.date <= to && !NON_COST.includes(e.category));
+    // Totaal: alle overhead. Losse shop: alleen de aan die shop getagde (directe) kosten.
+    if (shop === "totaal") return inRange;
+    return inRange.filter((e: any) => e.store === shop);
   }, [data, pl, shop]);
   const overhead = expensesInRange.reduce((a: number, e: any) => a + (e.bedrag || 0), 0) - expensesInRange.filter((e: any) => e.category === "Privé").reduce((a: number, e: any) => a + (e.bedrag || 0), 0);
   const prive = expensesInRange.filter((e: any) => e.category === "Privé").reduce((a: number, e: any) => a + (e.bedrag || 0), 0);
@@ -258,7 +261,7 @@ export default function Dashboard() {
               <button key={v} className={shop === v ? "on" : ""} onClick={() => setShop(v)}>{l}</button>
             ))}
           </div>
-          <span className="shopnote">{shop === "totaal" ? "Alle shops + overhead (bank)" : "Per shop · exclusief overhead"}</span>
+          <span className="shopnote">{shop === "totaal" ? "Alle shops + alle overhead" : "Per shop · incl. eigen getagde kosten"}</span>
         </div>
       )}
 
@@ -523,7 +526,7 @@ export default function Dashboard() {
                           <div className="cash-row"><span>Overhead (excl. privé)</span><b className="mono red">−{eur(ohScope)}</b></div>
                           <div className="cash-div" />
                           <div className="cash-row big"><span>Nettowinst</span><b className={`mono ${nettoScope >= 0 ? "green" : "red"}`}>{eur(nettoScope)}</b></div>
-                          <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>Incl. alle algemene kosten. Kijk op <b>Totaal</b> voor de pro-rata verdeling per shop.</p>
+                          <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>Alleen je directe (aan deze shop getagde) kosten. Op <b>Totaal</b> worden de algemene kosten pro-rata bijgeteld.</p>
                         </div>
                       )}
                     </Card>
