@@ -251,14 +251,16 @@ export default function Dashboard() {
         ))}
       </nav>
 
-      <div className="shopbar">
-        <div className="seg shopseg">
-          {[["drivemax", "Drivemax"], ["homivo", "Homivo"], ["totaal", "Totaal"]].map(([v, l]) => (
-            <button key={v} className={shop === v ? "on" : ""} onClick={() => setShop(v)}>{l}</button>
-          ))}
+      {tab !== "uitgaves" && (
+        <div className="shopbar">
+          <div className="seg shopseg">
+            {[["drivemax", "Drivemax"], ["homivo", "Homivo"], ["totaal", "Totaal"]].map(([v, l]) => (
+              <button key={v} className={shop === v ? "on" : ""} onClick={() => setShop(v)}>{l}</button>
+            ))}
+          </div>
+          <span className="shopnote">{shop === "totaal" ? "Alle shops + overhead (bank)" : "Per shop · exclusief overhead"}</span>
         </div>
-        <span className="shopnote">{shop === "totaal" ? "Alle shops + overhead (bank)" : "Per shop · exclusief overhead"}</span>
-      </div>
+      )}
 
       <main className="main">
         <div className="row-between">
@@ -739,7 +741,12 @@ const METHOD_PRESETS = ["AMEX", "RABO", "RABO-CC", "WISE", "REVOLUT"];
 
 function BespaarLijst({ rows, onChange }: any) {
   const [busy, setBusy] = useState(false);
-  const flagged = (rows || []).filter((r: any) => r.beoordeling === "slecht" || r.beoordeling === "nakijken");
+  const curMonth = new Date().toISOString().slice(0, 7);
+  const [mMonth, setMMonth] = useState<string>(curMonth);
+  const allFlagged = (rows || []).filter((r: any) => r.beoordeling === "slecht" || r.beoordeling === "nakijken");
+  const monthsInData = Array.from(new Set(allFlagged.map((r: any) => (r.date || "").slice(0, 7)).filter(Boolean)));
+  const monthOpts = Array.from(new Set([curMonth, ...monthsInData])).sort().reverse() as string[];
+  const flagged = allFlagged.filter((r: any) => mMonth === "all" || (r.date || "").startsWith(mMonth));
   const open = flagged.filter((r: any) => !r.done).sort((a: any, b: any) => (b.date || "").localeCompare(a.date || ""));
   const done = flagged.filter((r: any) => r.done);
   const totOpen = open.reduce((a: number, r: any) => a + (r.bedrag || 0), 0);
@@ -757,16 +764,23 @@ function BespaarLijst({ rows, onChange }: any) {
     try { await post(r, { note }); await onChange(); } catch {}
   };
 
-  if (!flagged.length) return null;
+  if (!allFlagged.length) return null;
 
   return (
     <Card title="Bespaar-lijst" subtitle={`${open.length} open · potentiële besparing ${eur(totOpen)}${done.length ? ` · ${done.length} afgehandeld` : ""}`}>
+      <div className="manmonth">
+        <span className="dim">Maand:</span>
+        <select className="msel" value={mMonth} onChange={(e) => setMMonth(e.target.value)}>
+          {monthOpts.map((m) => <option key={m} value={m}>{monthLabelNL(m)}</option>)}
+          <option value="all">Alle maanden</option>
+        </select>
+      </div>
       <div className="besp-chips">
         {totSlecht > 0 && <span className="besp-chip slecht">Slecht: <b>{eur(totSlecht)}</b></span>}
         {totNakijk > 0 && <span className="besp-chip nakijk">Nakijken: <b>{eur(totNakijk)}</b></span>}
       </div>
       {open.length === 0 ? (
-        <p className="muted" style={{ margin: "10px 0 0" }}>Alles afgehandeld — niks meer op te ruimen.</p>
+        <p className="muted" style={{ margin: "10px 0 0" }}>{done.length > 0 ? "Alles afgehandeld — niks meer op te ruimen." : "Geen gemarkeerde uitgaves in deze maand."}</p>
       ) : (
         <div className="table-wrap" style={{ marginTop: 10 }}>
           <table className="table">
