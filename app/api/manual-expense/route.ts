@@ -43,6 +43,7 @@ export async function POST(req: Request) {
       store: ["drivemax", "homivo", "algemeen"].includes(b.store) ? b.store : "algemeen",
       beoordeling: ["goed", "slecht", "nakijken"].includes(b.beoordeling) ? b.beoordeling : "",
       note: String(b.note || "").slice(0, 300),
+      done: b.done === true,
     };
 
     const rows = await list();

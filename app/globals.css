@@ -23,7 +23,7 @@ body{font-family:'Inter',system-ui,sans-serif;color:var(--ink);background:var(--
 .tab:hover{color:var(--ink);background:var(--paper)}
 .tab.on{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
 
-.main{max-width:1120px;margin:0 auto;padding:24px 24px 80px}
+.main{max-width:min(1560px,95vw);margin:0 auto;padding:24px 24px 80px}
 .h2{font-family:'Space Grotesk';font-size:22px;font-weight:600;margin:4px 0 16px;letter-spacing:-.01em}
 .row-between{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:8px}
 
@@ -260,7 +260,8 @@ tr.excl .rowdesc, tr.excl .mono { color: var(--down,#CE2C2C); }
 .addbtn:hover{filter:brightness(.94)}
 .addbtn:disabled{opacity:.5;cursor:default}
 .cellinp{width:100%;font:inherit;font-size:13px;padding:5px 7px;border:1px solid var(--line);border-radius:6px;background:#fff}
-.cellinp.manwide{min-width:150px}
+.cellinp.manwide{min-width:180px}
+.cellinp.mannote{min-width:180px}
 .cellinp.manamt{width:90px}
 .cellinp.r{text-align:right}
 .cellsel{font:inherit;font-size:13px;padding:5px 6px;border:1px solid var(--line);border-radius:6px;background:#fff}
@@ -268,6 +269,21 @@ tr.excl .rowdesc, tr.excl .mono { color: var(--down,#CE2C2C); }
   border-radius:6px;background:#fff;color:var(--soft);cursor:pointer}
 .rowdel:hover{color:var(--down);border-color:var(--down)}
 .manmonth{display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:13px}
+/* Bespaar-lijst */
+.besp-chips{display:flex;flex-wrap:wrap;gap:10px;margin-top:2px}
+.besp-chip{font-size:13px;padding:5px 12px;border-radius:999px;font-weight:600}
+.besp-chip b{font-weight:700}
+.besp-chip.slecht{background:var(--down-soft);color:var(--down)}
+.besp-chip.nakijk{background:var(--amber-soft);color:var(--amber)}
+.besp-badge{display:inline-block;font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px;text-transform:uppercase;letter-spacing:.03em}
+.besp-badge.slecht{background:var(--down-soft);color:var(--down)}
+.besp-badge.nakijken{background:var(--amber-soft);color:var(--amber)}
+.besp-done{font:inherit;font-size:12px;font-weight:700;padding:5px 11px;border:1px solid var(--up);border-radius:7px;background:var(--up-soft);color:var(--up);cursor:pointer;white-space:nowrap}
+.besp-done:hover{background:var(--up);color:#fff}
+.besp-done:disabled{opacity:.5;cursor:default}
+.besp-donewrap{margin-top:12px}
+.besp-donewrap summary{font-size:13px;color:var(--soft);cursor:pointer;padding:6px 0}
+.besp-donerow td{color:var(--soft)}
 tr.man-goed td{background:var(--up-soft)}
 tr.man-slecht td{background:var(--down-soft)}
 tr.man-nakijken td{background:var(--amber-soft)}

@@ -645,6 +645,10 @@ export default function Dashboard() {
             </>)}
 
             {tab === "uitgaves" && (
+              <BespaarLijst rows={(data.expenses || []).filter((e: any) => e.manual)} onChange={reloadData} />
+            )}
+
+            {tab === "uitgaves" && (
               <ManualExpenses
                 rows={(data.expenses || []).filter((e: any) => e.manual)}
                 cats={(data.categories && data.categories.length) ? data.categories : FALLBACK_CATEGORIES}
@@ -720,6 +724,7 @@ const STORE_OPTS = [
   { v: "drivemax", l: "Drivemax" },
   { v: "homivo", l: "Homivo" },
 ];
+const storeLabel = (v: string) => STORE_OPTS.find((s) => s.v === v)?.l || "Algemeen";
 const BEOORD_OPTS = [
   { v: "", l: "—" },
   { v: "goed", l: "Goed" },
@@ -731,6 +736,82 @@ const monthLabelNL = (m: string) => {
   return new Date(Number(y), Number(mo) - 1, 1).toLocaleDateString("nl-NL", { month: "long", year: "numeric" });
 };
 const METHOD_PRESETS = ["AMEX", "RABO", "RABO-CC", "WISE", "REVOLUT"];
+
+function BespaarLijst({ rows, onChange }: any) {
+  const [busy, setBusy] = useState(false);
+  const flagged = (rows || []).filter((r: any) => r.beoordeling === "slecht" || r.beoordeling === "nakijken");
+  const open = flagged.filter((r: any) => !r.done).sort((a: any, b: any) => (b.date || "").localeCompare(a.date || ""));
+  const done = flagged.filter((r: any) => r.done);
+  const totOpen = open.reduce((a: number, r: any) => a + (r.bedrag || 0), 0);
+  const totSlecht = open.filter((r: any) => r.beoordeling === "slecht").reduce((a: number, r: any) => a + (r.bedrag || 0), 0);
+  const totNakijk = open.filter((r: any) => r.beoordeling === "nakijken").reduce((a: number, r: any) => a + (r.bedrag || 0), 0);
+
+  const post = (r: any, patch: any) =>
+    fetch(`/api/manual-expense`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ uid: r.uid, date: r.date, omschrijving: r.omschrijving, methode: r.methode, bedrag: r.bedrag, category: r.category, store: r.store, beoordeling: r.beoordeling, note: r.note, done: !!r.done, ...patch }) });
+
+  const setDone = async (r: any, d: boolean) => {
+    setBusy(true);
+    try { await post(r, { done: d }); await onChange(); } catch {} finally { setBusy(false); }
+  };
+  const editNote = async (r: any, note: string) => {
+    try { await post(r, { note }); await onChange(); } catch {}
+  };
+
+  if (!flagged.length) return null;
+
+  return (
+    <Card title="Bespaar-lijst" subtitle={`${open.length} open · potentiële besparing ${eur(totOpen)}${done.length ? ` · ${done.length} afgehandeld` : ""}`}>
+      <div className="besp-chips">
+        {totSlecht > 0 && <span className="besp-chip slecht">Slecht: <b>{eur(totSlecht)}</b></span>}
+        {totNakijk > 0 && <span className="besp-chip nakijk">Nakijken: <b>{eur(totNakijk)}</b></span>}
+      </div>
+      {open.length === 0 ? (
+        <p className="muted" style={{ margin: "10px 0 0" }}>Alles afgehandeld — niks meer op te ruimen.</p>
+      ) : (
+        <div className="table-wrap" style={{ marginTop: 10 }}>
+          <table className="table">
+            <thead><tr>
+              <th>Datum</th><th>Omschrijving</th><th className="r">Bedrag</th><th>Oordeel</th><th>Store</th><th>Actie / notitie</th><th></th>
+            </tr></thead>
+            <tbody>
+              {open.map((r: any) => (
+                <tr key={r.uid} className={r.beoordeling === "slecht" ? "man-slecht" : "man-nakijken"}>
+                  <td className="nowrap">{r.date ? ddmmyyyy(r.date) : "—"}</td>
+                  <td>{r.omschrijving || r.label}</td>
+                  <td className="r mono strong">{eur(r.bedrag)}</td>
+                  <td><span className={`besp-badge ${r.beoordeling}`}>{r.beoordeling === "slecht" ? "Slecht" : "Nakijken"}</span></td>
+                  <td className="dim">{storeLabel(r.store)}</td>
+                  <td><input className="cellinp mannote" placeholder="bijv. opzeggen / onderhandelen" defaultValue={r.note} onBlur={(e) => e.target.value !== (r.note || "") && editNote(r, e.target.value)} /></td>
+                  <td className="r"><button className="besp-done" title="Markeer als afgehandeld" disabled={busy} onClick={() => setDone(r, true)}>✓ Klaar</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {done.length > 0 && (
+        <details className="besp-donewrap">
+          <summary>{done.length} afgehandeld ({eur(done.reduce((a: number, r: any) => a + (r.bedrag || 0), 0))})</summary>
+          <div className="table-wrap">
+            <table className="table">
+              <tbody>
+                {done.map((r: any) => (
+                  <tr key={r.uid} className="besp-donerow">
+                    <td className="nowrap">{r.date ? ddmmyyyy(r.date) : "—"}</td>
+                    <td style={{ textDecoration: "line-through" }}>{r.omschrijving || r.label}</td>
+                    <td className="r mono">{eur(r.bedrag)}</td>
+                    <td className="dim">{r.note}</td>
+                    <td className="r"><button className="bulkclear" onClick={() => setDone(r, false)}>Terug</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      )}
+    </Card>
+  );
+}
 
 function ManualExpenses({ rows, cats, methods, onChange }: any) {
   const today = new Date().toISOString().slice(0, 10);
@@ -831,7 +912,7 @@ function ManualExpenses({ rows, cats, methods, onChange }: any) {
                 <td><select className="cellsel" value={r.category} onChange={(e) => editRow(r, { category: e.target.value })}>{cats.map((c: string) => <option key={c} value={c}>{c}</option>)}</select></td>
                 <td><select className="cellsel" value={r.store || "algemeen"} onChange={(e) => editRow(r, { store: e.target.value })}>{STORE_OPTS.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}</select></td>
                 <td><select className="cellsel" value={r.beoordeling || ""} onChange={(e) => editRow(r, { beoordeling: e.target.value })}>{BEOORD_OPTS.map((o) => <option key={o.v} value={o.v}>{o.l}</option>)}</select></td>
-                <td><input className="cellinp" defaultValue={r.note} onBlur={(e) => e.target.value !== r.note && editRow(r, { note: e.target.value })} /></td>
+                <td><input className="cellinp mannote" placeholder="notitie…" defaultValue={r.note} onBlur={(e) => e.target.value !== r.note && editRow(r, { note: e.target.value })} /></td>
                 <td className="r"><button className="rowdel" title="Verwijderen" onClick={() => del(r)}>×</button></td>
               </tr>
             ))}
