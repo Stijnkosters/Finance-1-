@@ -467,6 +467,69 @@ export default function Dashboard() {
                   </Card>
                 </div>
 
+                {(() => {
+                  const bruto = pl.totals.totalProfit || 0;
+                  const bizExp = expensesInRange.filter((e: any) => e.category !== "Privé");
+                  const sumE = (arr: any[]) => arr.reduce((a: number, e: any) => a + (e.bedrag || 0), 0);
+                  const ohGeneral = sumE(bizExp.filter((e: any) => e.store !== "drivemax" && e.store !== "homivo"));
+                  const ohTag = (s: string) => sumE(bizExp.filter((e: any) => e.store === s));
+                  const ohTotal = sumE(bizExp);
+                  const perShop = pl.perShop || [];
+                  const totalRev = pl.totals.omzet || 0;
+                  const nettoTotal = bruto - ohTotal;
+                  const ohScope = shop === "drivemax" ? ohTag("drivemax") + ohGeneral : shop === "homivo" ? ohTag("homivo") + ohGeneral : ohTotal;
+                  const nettoScope = bruto - ohScope;
+                  return (
+                    <Card title="Nettowinst na overhead" subtitle="omzet − COGS − ads − fees − refunds − overhead (excl. privé)">
+                      {perShop.length > 1 ? (
+                        <div className="table-wrap">
+                          <table className="table">
+                            <thead><tr><th>Shop</th><th className="r">Omzet</th><th className="r">Bruto</th><th className="r">Overhead</th><th className="r">Netto</th><th className="r">Marge%</th></tr></thead>
+                            <tbody>
+                              {perShop.map((s: any) => {
+                                const rev = s.totals.omzet || 0;
+                                const share = totalRev > 0 ? rev / totalRev : 0;
+                                const oh = ohTag(s.id) + ohGeneral * share;
+                                const b = s.totals.totalProfit || 0;
+                                const netto = b - oh;
+                                return (
+                                  <tr key={s.id}>
+                                    <td>{s.name}</td>
+                                    <td className="r mono">{eur(rev)}</td>
+                                    <td className="r mono">{eur(b)}</td>
+                                    <td className="r mono dim">{eur(oh)}</td>
+                                    <td className={`r mono strong ${netto >= 0 ? "green" : "red"}`}>{eur(netto)}</td>
+                                    <td className={`r mono ${netto >= 0 ? "green" : "red"}`}>{rev > 0 ? numf((netto / rev) * 100, 1) + "%" : "—"}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                            <tfoot>
+                              <tr>
+                                <td>Totaal</td>
+                                <td className="r mono">{eur(totalRev)}</td>
+                                <td className="r mono">{eur(bruto)}</td>
+                                <td className="r mono">{eur(ohTotal)}</td>
+                                <td className={`r mono strong ${nettoTotal >= 0 ? "green" : "red"}`}>{eur(nettoTotal)}</td>
+                                <td className={`r mono strong ${nettoTotal >= 0 ? "green" : "red"}`}>{totalRev > 0 ? numf((nettoTotal / totalRev) * 100, 1) + "%" : "—"}</td>
+                              </tr>
+                            </tfoot>
+                          </table>
+                          <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>Getagde kosten gaan naar hun shop; algemene kosten ({eur(ohGeneral)}) zijn pro-rata naar omzet verdeeld.</p>
+                        </div>
+                      ) : (
+                        <div className="cash">
+                          <div className="cash-row"><span>Bruto (winst vóór overhead)</span><b className="mono">{eur(bruto)}</b></div>
+                          <div className="cash-row"><span>Overhead (excl. privé)</span><b className="mono red">−{eur(ohScope)}</b></div>
+                          <div className="cash-div" />
+                          <div className="cash-row big"><span>Nettowinst</span><b className={`mono ${nettoScope >= 0 ? "green" : "red"}`}>{eur(nettoScope)}</b></div>
+                          <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>Incl. alle algemene kosten. Kijk op <b>Totaal</b> voor de pro-rata verdeling per shop.</p>
+                        </div>
+                      )}
+                    </Card>
+                  );
+                })()}
+
                 <Card title="Uitgaven per categorie" subtitle={`overhead · transfers niet meegeteld · totaal ${eur(byCategory.total)}`}>
                   <div className="breakdown">
                     {byCategory.items.length === 0 && <div className="muted">Geen overhead in deze periode. Kies een maand of importeer je bankafschrift.</div>}
@@ -660,7 +723,7 @@ export default function Dashboard() {
               />
             )}
 
-            {tab === "uitgaves" && (() => {
+            {false && tab === "uitgaves" && (() => {
               const q = expSearch.trim().toLowerCase();
               const rows = [...(data.expenses || [])]
                 .filter((e: any) => !e.manual)
