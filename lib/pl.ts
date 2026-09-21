@@ -337,9 +337,9 @@ export async function computePL(shopParam: string, from: string, to: string): Pr
   const { days, totals } = finalize(mergedByDay, mergedAd, mergedCust);
 
   // Refund-details (klant + mailcontact) aan de juiste dag hangen, hoogste bedrag eerst.
-  for (const day of days) {
+  for (const day of days as any[]) {
     const list = mergedRefunds[day.date];
-    if (list && list.length) day.refundList = list.sort((a, b) => b.amount - a.amount);
+    if (list && list.length) day.refundList = list.sort((a: any, b: any) => b.amount - a.amount);
   }
 
   // Terug van leverancier (NicheBay-refunds, EUR via dagkoers): verreken als
