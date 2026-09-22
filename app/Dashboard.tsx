@@ -482,6 +482,7 @@ export default function Dashboard() {
                   const nettoTotal = bruto - ohTotal;
                   const ohScope = shop === "drivemax" ? ohTag("drivemax") + ohGeneral : shop === "homivo" ? ohTag("homivo") + ohGeneral : ohTotal;
                   const nettoScope = bruto - ohScope;
+                  const priveAll = (data.expenses || []).filter((e: any) => e.category === "Privé" && e.date >= pl.range.from && e.date <= pl.range.to).reduce((a: number, e: any) => a + (e.bedrag || 0), 0);
                   return (
                     <Card title="Nettowinst na overhead" subtitle="omzet − COGS − ads − fees − refunds − overhead (excl. privé)">
                       {perShop.length > 1 ? (
@@ -519,6 +520,14 @@ export default function Dashboard() {
                             </tfoot>
                           </table>
                           <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>Getagde kosten gaan naar hun shop; algemene kosten ({eur(ohGeneral)}) zijn pro-rata naar omzet verdeeld.</p>
+                          {priveAll > 0 && (
+                            <div className="cash" style={{ marginTop: 12 }}>
+                              <div className="cash-row"><span>Zakelijke nettowinst</span><b className={`mono ${nettoTotal >= 0 ? "green" : "red"}`}>{eur(nettoTotal)}</b></div>
+                              <div className="cash-row"><span>Privé opgenomen</span><b className="mono amber">−{eur(priveAll)}</b></div>
+                              <div className="cash-div" />
+                              <div className="cash-row big"><span>Over na privé</span><b className={`mono ${(nettoTotal - priveAll) >= 0 ? "green" : "red"}`}>{eur(nettoTotal - priveAll)}</b></div>
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <div className="cash">
@@ -526,7 +535,12 @@ export default function Dashboard() {
                           <div className="cash-row"><span>Overhead (excl. privé)</span><b className="mono red">−{eur(ohScope)}</b></div>
                           <div className="cash-div" />
                           <div className="cash-row big"><span>Nettowinst</span><b className={`mono ${nettoScope >= 0 ? "green" : "red"}`}>{eur(nettoScope)}</b></div>
-                          <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>Alleen je directe (aan deze shop getagde) kosten. Op <b>Totaal</b> worden de algemene kosten pro-rata bijgeteld.</p>
+                          {priveAll > 0 && <>
+                            <div className="cash-row"><span>Privé opgenomen <span className="dim">(heel bedrijf)</span></span><b className="mono amber">−{eur(priveAll)}</b></div>
+                            <div className="cash-div" />
+                            <div className="cash-row big"><span>Over na privé</span><b className={`mono ${(nettoScope - priveAll) >= 0 ? "green" : "red"}`}>{eur(nettoScope - priveAll)}</b></div>
+                          </>}
+                          <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>Alleen je directe (aan deze shop getagde) kosten. Op <b>Totaal</b> worden de algemene kosten pro-rata bijgeteld. Privé is geen bedrijfskost en telt niet in de nettowinst.</p>
                         </div>
                       )}
                     </Card>
