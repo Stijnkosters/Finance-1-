@@ -287,3 +287,13 @@ tr.excl .rowdesc, tr.excl .mono { color: var(--down,#CE2C2C); }
 tr.man-goed td{background:var(--up-soft)}
 tr.man-slecht td{background:var(--down-soft)}
 tr.man-nakijken td{background:var(--amber-soft)}
+
+/* Vermogen — asset-allocatie */
+.vtype{font:inherit;font-size:12.5px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);flex:0 0 auto}
+.alloc-grid{display:grid;grid-template-columns:230px 1fr;gap:22px;align-items:center}
+.alloc-legend{display:flex;flex-direction:column;gap:9px}
+.alloc-row{display:flex;align-items:center;gap:10px;font-size:14px}
+.alloc-dot{width:11px;height:11px;border-radius:3px;flex:0 0 auto}
+.alloc-name{flex:1}
+.alloc-sub{font-size:11px;text-transform:uppercase;letter-spacing:.04em;font-weight:700;margin-bottom:2px}
+@media(max-width:640px){.alloc-grid{grid-template-columns:1fr}}

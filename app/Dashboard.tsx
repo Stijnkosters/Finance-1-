@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis,
-  CartesianGrid, Tooltip, ReferenceLine, Cell,
+  CartesianGrid, Tooltip, ReferenceLine, Cell, PieChart, Pie,
 } from "recharts";
 import { TrendingUp, TrendingDown, LayoutDashboard, CalendarDays, Receipt, Wallet, RefreshCw, Upload, Trash2, Repeat, Package, ShoppingCart, LogOut } from "lucide-react";
 
@@ -1560,6 +1560,19 @@ function ProductMargins({ shop }: { shop: string }) {
   );
 }
 
+const ASSET_TYPES = ["Cash", "Crypto", "Beleggingen", "Vastgoed", "Voorraad", "Debiteuren", "Overig"];
+const ALLOC_COLORS = ["#3A3FD6", "#0E8A52", "#B4791C", "#CE2C2C", "#7B61FF", "#0AA2C0", "#D6336C", "#8A909C"];
+function guessType(name = ""): string {
+  const s = (name || "").toLowerCase();
+  if (/crypto|btc|bitcoin|\beth\b|ether|coin|binance|kraken|ledger/.test(s)) return "Crypto";
+  if (/belegg|aandel|\betf\b|effecten|degiro|broker|fonds/.test(s)) return "Beleggingen";
+  if (/vastgoed|woning|\bhuis\b|pand|onroerend|hypothe/.test(s)) return "Vastgoed";
+  if (/voorraad|inventory/.test(s)) return "Voorraad";
+  if (/debiteur|te betalen|te ontvangen|openstaand|nichebay|uit te betalen/.test(s)) return "Debiteuren";
+  if (/spaar|bank|contant|\bcash\b|rekening|revolut|wise|paypal|mollie|shopify|kas/.test(s)) return "Cash";
+  return "Overig";
+}
+
 function VermogenPanel() {
   const [assets, setAssets] = useState<any[]>([]);
   const [liab, setLiab] = useState<any[]>([]);
@@ -1635,6 +1648,11 @@ function VermogenPanel() {
       {list(which).map((r: any, i: number) => (
         <div className="vrow" key={i}>
           <input className="vname" value={r.name} placeholder="naam" onChange={(e) => edit(which, i, "name", e.target.value)} onBlur={() => autosave()} />
+          {which === "a" && (
+            <select className="vtype" value={r.type || guessType(r.name)} onChange={(e) => { edit(which, i, "type", e.target.value); setTimeout(() => autosave(), 0); }}>
+              {ASSET_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          )}
           <input className="vamt mono" type="number" step="0.01" value={r.amount} placeholder="0,00" onChange={(e) => edit(which, i, "amount", e.target.value)} onBlur={() => autosave()} />
           <button className="vdel" onClick={() => removeRow(which, i)} title="Verwijderen">×</button>
         </div>
@@ -1676,6 +1694,52 @@ function VermogenPanel() {
         <Card title={`Bezittingen · ${scope === "zakelijk" ? "zakelijk" : "privé"}`} subtitle={eur(aTot)}>{rows("a")}</Card>
         <Card title={`Schulden · ${scope === "zakelijk" ? "zakelijk" : "privé"}`} subtitle={eur(lTot)}>{rows("l")}</Card>
       </div>
+
+      {(() => {
+        const activeA = scope === "zakelijk" ? assets : assetsP;
+        const posA = activeA.filter((r: any) => (Number(r.amount) || 0) > 0);
+        const totalA = posA.reduce((a: number, r: any) => a + (Number(r.amount) || 0), 0);
+        if (totalA <= 0) return null;
+        const byType: Record<string, number> = {};
+        posA.forEach((r: any) => { const t = r.type || guessType(r.name); byType[t] = (byType[t] || 0) + (Number(r.amount) || 0); });
+        const typeRows = Object.entries(byType).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+        const assetRows = posA.map((r: any) => ({ name: r.name || "?", value: Number(r.amount) || 0, type: r.type || guessType(r.name) })).sort((a: any, b: any) => b.value - a.value);
+        const pct = (v: number) => Math.round((v / totalA) * 100);
+        return (
+          <Card title={`Asset-allocatie · ${scope === "zakelijk" ? "zakelijk" : "privé"}`} subtitle={`waar zit je ${eur(totalA)} aan bezittingen in`}>
+            <div className="alloc-grid">
+              <div className="alloc-chart">
+                <ResponsiveContainer width="100%" height={220}>
+                  <PieChart>
+                    <Pie data={typeRows} dataKey="value" nameKey="name" innerRadius={54} outerRadius={92} paddingAngle={2} stroke="none">
+                      {typeRows.map((t, i) => <Cell key={t.name} fill={ALLOC_COLORS[i % ALLOC_COLORS.length]} />)}
+                    </Pie>
+                    <Tooltip formatter={(v: any, n: any) => [`${eur(v)} · ${pct(v)}%`, n]} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="alloc-legend">
+                {typeRows.map((t, i) => (
+                  <div className="alloc-row" key={t.name}>
+                    <span className="alloc-dot" style={{ background: ALLOC_COLORS[i % ALLOC_COLORS.length] }} />
+                    <span className="alloc-name">{t.name}</span>
+                    <span className="alloc-val mono"><b>{pct(t.value)}%</b> <span className="dim">· {eur(t.value)}</span></span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="breakdown" style={{ marginTop: 16 }}>
+              <div className="alloc-sub dim">Per bezitting</div>
+              {assetRows.map((r: any) => (
+                <div key={r.name}>
+                  <div className="bd-head"><span>{r.name} <span className="dim">· {r.type}</span></span><span className="mono">{pct(r.value)}% · {eur(r.value)}</span></div>
+                  <div className="bar"><div className="bar-fill" style={{ width: `${pct(r.value)}%` }} /></div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        );
+      })()}
 
       <div className="ctrls" style={{ marginTop: 14, justifyContent: "flex-end" }}>
         <button className="bulkdel" style={{ background: "var(--accent)" }} onClick={saveSheet}>Opslaan (stand per {ddmmyyyy(date)})</button>
