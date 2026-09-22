@@ -1560,12 +1560,13 @@ function ProductMargins({ shop }: { shop: string }) {
   );
 }
 
-const ASSET_TYPES = ["Cash", "Crypto", "Beleggingen", "Vastgoed", "Voorraad", "Debiteuren", "Overig"];
-const ALLOC_COLORS = ["#3A3FD6", "#0E8A52", "#B4791C", "#CE2C2C", "#7B61FF", "#0AA2C0", "#D6336C", "#8A909C"];
+const ASSET_TYPES = ["Cash", "Crypto", "Edelmetaal", "Beleggingen", "Vastgoed", "Voorraad", "Debiteuren", "Overig"];
+const ALLOC_COLORS = ["#3A3FD6", "#0E8A52", "#B4791C", "#CE2C2C", "#7B61FF", "#0AA2C0", "#D6336C", "#5F6672", "#E0A81E"];
 function guessType(name = ""): string {
   const s = (name || "").toLowerCase();
   if (/crypto|btc|bitcoin|\beth\b|ether|coin|binance|kraken|ledger/.test(s)) return "Crypto";
-  if (/belegg|aandel|\betf\b|effecten|degiro|broker|fonds/.test(s)) return "Beleggingen";
+  if (/zilver|silver|\bgoud\b|\bgold\b|edelmetaal|platina|metaal/.test(s)) return "Edelmetaal";
+  if (/belegg|aandel|\betf\b|effecten|degiro|broker|fonds|mexem|etoro|trading ?212|ibkr|interactive/.test(s)) return "Beleggingen";
   if (/vastgoed|woning|\bhuis\b|pand|onroerend|hypothe/.test(s)) return "Vastgoed";
   if (/voorraad|inventory/.test(s)) return "Voorraad";
   if (/debiteur|te betalen|te ontvangen|openstaand|nichebay|uit te betalen/.test(s)) return "Debiteuren";
