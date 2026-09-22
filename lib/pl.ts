@@ -281,7 +281,7 @@ export async function computePL(shopParam: string, from: string, to: string): Pr
   if (!targets.length || (shopParam !== "totaal" && !(await shopHasCredentials(targets[0])))) {
     return {
       ok: false,
-      error: `Shop "${shopParam}" is nog niet gekoppeld aan Shopify. Koppel 'm via de Importeren-tab (Shopify-koppeling) of zet de env-variabelen in Railway.`,
+      error: `Shop "${shopParam}" is nog niet gekoppeld aan Shopify. Koppel 'm via de Koppelingen-tab (Shopify-koppeling) of zet de env-variabelen in Railway.`,
     };
   }
 

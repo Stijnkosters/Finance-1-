@@ -246,7 +246,7 @@ export default function Dashboard() {
           ["marges", "Marge per product", Package],
           ["prijs", "Prijswijziging", TrendingUp],
           ["balans", "Vermogen", Wallet],
-          ["import", "Importeren", Upload],
+          ["import", "Koppelingen", Upload],
         ].map(([k, label, Icon]: any) => (
           <button key={k} className={`tab ${tab === k ? "on" : ""}`} onClick={() => setTab(k)}>
             <Icon size={16} /> {label}
@@ -267,7 +267,7 @@ export default function Dashboard() {
 
       <main className="main">
         <div className="row-between">
-          <h2 className="h2">{tab === "overzicht" ? "Overzicht" : tab === "pl" ? "Dagelijkse P&L" : tab === "orders" ? "Per order" : tab === "uitgaves" ? "Uitgaves" : tab === "vaste" ? "Vaste lasten" : tab === "marges" ? "Marge per product" : tab === "prijs" ? "Prijswijziging" : tab === "balans" ? "Vermogen" : "Importeren"}</h2>
+          <h2 className="h2">{tab === "overzicht" ? "Overzicht" : tab === "pl" ? "Dagelijkse P&L" : tab === "orders" ? "Per order" : tab === "uitgaves" ? "Uitgaves" : tab === "vaste" ? "Vaste lasten" : tab === "marges" ? "Marge per product" : tab === "prijs" ? "Prijswijziging" : tab === "balans" ? "Vermogen" : "Koppelingen"}</h2>
           {tab !== "import" && tab !== "uitgaves" && tab !== "marges" && tab !== "vaste" && tab !== "prijs" && (
             <div className="ctrls">
               <div className="seg">
@@ -585,7 +585,7 @@ export default function Dashboard() {
                     const missOrders = missDays.reduce((a: number, d: any) => a + (d.noCost || 0), 0);
                     return missDays.length > 0 ? (
                       <div className="banner warn" style={{ marginBottom: 12 }}>
-                        ⚠ <b>Some cogs are missing.</b> {missOrders} order(s) op {missDays.length} dag(en) hebben nog geen inkoop-COGS — upload de bijbehorende Win-Win factuur (Importeren-tab). Tot die tijd is de winst op die dagen te hoog.
+                        ⚠ <b>Some cogs are missing.</b> {missOrders} order(s) op {missDays.length} dag(en) hebben nog geen inkoop-COGS — upload de bijbehorende Win-Win factuur (Koppelingen-tab). Tot die tijd is de winst op die dagen te hoog.
                       </div>
                     ) : null;
                   })()}
@@ -2096,7 +2096,7 @@ function ImportPanel({ onDone, onReload, cats, expenses }: any) {
         </div>
       </Card>
 
-      <Card title="Bankafschrift importeren" subtitle="bank · creditcard · PayPal">
+      {false && (<Card title="Bankafschrift importeren" subtitle="bank · creditcard · PayPal">
         <p className="muted" style={{ marginTop: 0 }}>
           Kies de bron en sleep je <b>CSV</b> hierheen. De import komt eerst in de <b>wachtrij</b> hieronder — die telt nog niet mee.
           Pas daar categorie en omschrijving aan en klik op <b>Goedkeuren</b> om ze definitief toe te voegen. Doe je niks, dan blijven ze staan.
@@ -2177,7 +2177,7 @@ function ImportPanel({ onDone, onReload, cats, expenses }: any) {
             )}
           </>
         )}
-      </Card>
+      </Card>)}
 
       <Card title="Inkoopfactuur (Win-Win PDF)" subtitle="exacte COGS per order · dagelijks">
         <p className="muted" style={{ marginTop: 0 }}>
@@ -2329,7 +2329,7 @@ function ImportPanel({ onDone, onReload, cats, expenses }: any) {
         )}
       </Card>
 
-      {pending.length > 0 && (() => {
+      {false && pending.length > 0 && (() => {
         const allSel = pending.length > 0 && pending.every((e: any) => psel.has(e.id));
         const toggleAll = () => { const n = new Set(psel); allSel ? pending.forEach((e: any) => n.delete(e.id)) : pending.forEach((e: any) => n.add(e.id)); setPsel(n); };
         return (
@@ -2361,7 +2361,7 @@ function ImportPanel({ onDone, onReload, cats, expenses }: any) {
         );
       })()}
 
-      {income.length > 0 && (() => {
+      {false && income.length > 0 && (() => {
         const real = income.filter((e: any) => e.category !== "Transfer");
         const transf = income.filter((e: any) => e.category === "Transfer");
         const totReal = real.reduce((a, e) => a + (e.bedrag || 0), 0);
@@ -2397,7 +2397,7 @@ function ImportPanel({ onDone, onReload, cats, expenses }: any) {
         );
       })()}
 
-      <button className="resetbtn" onClick={reset} disabled={busy} style={{ marginTop: 4 }}><Trash2 size={14} /> Goedgekeurde import wissen</button>
+      {false && <button className="resetbtn" onClick={reset} disabled={busy} style={{ marginTop: 4 }}><Trash2 size={14} /> Goedgekeurde import wissen</button>}
     </>
   );
 }
