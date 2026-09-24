@@ -700,6 +700,7 @@ export default function Dashboard() {
                           <th>Land</th><th className="r">Orders</th><th className="r">AOV</th><th className="r">Omzet</th>
                           <th className="r">COGS</th><th className="r">Refunds</th><th className="r">Fees</th>
                           <th className="r">Dekkingsbijdrage</th><th className="r">Marge %</th><th className="r">Break-even ROAS</th>
+                          <th className="r">Google-spend</th><th className="r">ROAS</th>
                         </tr></thead>
                         <tbody>
                           {countries.map((c: any) => (
@@ -714,13 +715,15 @@ export default function Dashboard() {
                               <td className="r mono">{eur(c.contributionMargin)}</td>
                               <td className={`r mono ${c.marginPct >= 0 ? "green" : "red"}`}>{numf(c.marginPct, 1)}%</td>
                               <td className="r mono strong">{c.breakevenRoas > 0 ? numf(c.breakevenRoas) : "—"}</td>
+                              <td className="r mono dim">{c.adspend ? eur(c.adspend) : "—"}</td>
+                              <td className={`r mono strong ${c.roas ? (c.roas >= c.breakevenRoas ? "green" : "red") : ""}`}>{c.roas ? numf(c.roas) : "—"}</td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
                     <p className="muted" style={{ marginTop: 8 }}>
-                      Break-even ROAS per land = hoeveel omzet je per euro advertentie nodig hebt om quitte te spelen in dat land. Lager = meer marge-ruimte. Ad spend is niet per land bekend, dus dit is de <b>drempel</b>, niet de gerealiseerde ROAS per land.
+                      Break-even ROAS = de <b>drempel</b> (omzet ÷ dekkingsbijdrage) — hoeveel omzet je per euro advertentie nodig hebt om quitte te spelen; lager = meer marge-ruimte. <b>ROAS</b> = je gerealiseerde omzet ÷ Google-spend in dat land (o.b.v. klantlocatie). <span className="green">Groen</span> = boven break-even (winst), <span className="red">rood</span> = eronder. Alleen Google-spend (Bing ~1% niet per land); organische omzet zit wel in de omzet, dus dit is je blended ROAS per land.
                     </p>
                   </Card>
                 )}

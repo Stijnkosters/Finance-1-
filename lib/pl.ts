@@ -1,5 +1,6 @@
 import { fetchOrders } from "@/lib/shopify";
 import { resolveAdSpend } from "@/lib/adspend";
+import { fetchGoogleSpendByCountry, googleAdsConfigured } from "@/lib/googleAds";
 import { nichebayConfigured, fetchNicheBayCostByOrder, fetchNicheBayRefunds } from "@/lib/nichebay";
 import { SHOPS, getShop, type ShopCfg } from "@/lib/shops";
 import { readJson } from "@/lib/store";
@@ -49,6 +50,15 @@ async function gatherShop(shop: ShopCfg, from: string, to: string) {
   );
   const adRes = await resolveAdSpend(from, to, shop.ads);
   const adspend = adRes.map;
+
+  // Google-adspend per land (voor ROAS per land). Niet-fataal: faalt de geo-query,
+  // dan blijft de per-land-tabel gewoon de drempel (break-even) tonen.
+  let adByCountry: Record<string, number> = {};
+  const gCid = shop.ads?.googleCustomerId;
+  if ((shop.ads?.useGoogleApi ?? true) && googleAdsConfigured(gCid)) {
+    try { adByCountry = await fetchGoogleSpendByCountry(from, to, gCid, shop.ads?.googleLoginCustomerId); }
+    catch { /* stil: extra info */ }
+  }
 
   let nbMap: Record<string, number> = {};
   let cogsSource = "costs.json";
@@ -161,7 +171,7 @@ async function gatherShop(shop: ShopCfg, from: string, to: string) {
   const missingCosts = Object.entries(costs).filter(([, c]) => !c.cost).map(([id, c]) => ({ id, title: c.title }));
 
   return {
-    byDay, byCountry, custStats, refundDetails, adspend, adRes,
+    byDay, byCountry, custStats, refundDetails, adspend, adByCountry, adRes,
     cogsSource, cogsWarning, nbMatched, nbZero, ordersNoCost,
     orderCount: orders.length,
     unmatched: Object.entries(unmatched).map(([id, v]) => ({ id, ...v })),
@@ -171,17 +181,19 @@ async function gatherShop(shop: ShopCfg, from: string, to: string) {
 
 // Break-even ROAS per land = omzet ÷ dekkingsbijdrage (omzet − COGS − fees − refunds).
 // Fees geschat met dezelfde formule als de dag-P&L.
-function finalizeCountries(byCountry: Record<string, CountryAgg>) {
+function finalizeCountries(byCountry: Record<string, CountryAgg>, adByCountry: Record<string, number> = {}) {
   return Object.values(byCountry).map((c) => {
     const fees = c.revenue * FEE_RATE + c.orders * FEE_FIXED;
     const contrib = c.revenue - c.cogs - fees - c.refunds;
     const breakevenRoas = contrib > 0 ? round(c.revenue / contrib) : 0;
     const marginPct = c.revenue > 0 ? round((contrib / c.revenue) * 100) : 0;
+    const adspend = round(adByCountry[c.country] || 0);
+    const roas = adspend > 0 ? round(c.revenue / adspend) : 0;
     return {
       country: c.country, orders: c.orders, units: c.units,
       revenue: round(c.revenue), cogs: round(c.cogs), refunds: round(c.refunds),
       fees: round(fees), contributionMargin: round(contrib),
-      breakevenRoas, marginPct,
+      breakevenRoas, marginPct, adspend, roas,
       aov: c.orders > 0 ? round(c.revenue / c.orders) : 0,
     };
   }).sort((a, b) => b.revenue - a.revenue);
@@ -290,6 +302,7 @@ export async function computePL(shopParam: string, from: string, to: string): Pr
   const mergedAd: Record<string, number> = {};
   const mergedCust: Record<string, { orders: number; revenue: number }> = {};
   const mergedRefunds: Record<string, any[]> = {};
+  const mergedAdCountry: Record<string, number> = {};
   const breakdown = { google: 0, bing: 0, manual: 0 };
   const adConv = { google: 0, bing: 0 };
   const adSources: string[] = [];
@@ -311,6 +324,7 @@ export async function computePL(shopParam: string, from: string, to: string): Pr
       const t = mergedCountry[cc];
       t.orders += c.orders; t.units += c.units; t.revenue += c.revenue; t.cogs += c.cogs; t.refunds += c.refunds;
     }
+    for (const [cc, v] of Object.entries(g.adByCountry || {})) mergedAdCountry[cc] = (mergedAdCountry[cc] || 0) + v;
     for (const [d, list] of Object.entries(g.refundDetails)) (mergedRefunds[d] ||= []).push(...list);
     for (const [d, v] of Object.entries(g.adspend)) mergedAd[d] = (mergedAd[d] || 0) + v;
     for (const [k, v] of Object.entries(g.custStats)) {
@@ -376,7 +390,7 @@ export async function computePL(shopParam: string, from: string, to: string): Pr
     shop: shopParam,
     range: { from, to },
     days,
-    countries: finalizeCountries(mergedCountry),
+    countries: finalizeCountries(mergedCountry, mergedAdCountry),
     totals,
     perShop,
     adSource: adSources.join(" · ") || "manual",

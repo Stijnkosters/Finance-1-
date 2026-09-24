@@ -74,3 +74,46 @@ export async function fetchGoogleStatsByDay(from: string, to: string, customerId
 export async function fetchAdSpendByDay(from: string, to: string, customerId?: string, loginCustomerId?: string): Promise<Record<string, number>> {
   return (await fetchGoogleStatsByDay(from, to, customerId, loginCustomerId)).spend;
 }
+
+// Geo-target-constant-ID → ISO2, voor de landen waar we op adverteren.
+const GEO_ISO: Record<string, string> = {
+  "2528": "NL", "2056": "BE", "2276": "DE", "2840": "US", "2250": "FR",
+  "2826": "GB", "2040": "AT", "2442": "LU", "2724": "ES", "2380": "IT",
+  "2372": "IE", "2752": "SE", "2208": "DK", "2616": "PL", "2620": "PT",
+  "2756": "CH", "2578": "NO", "2246": "FI",
+};
+
+// Google-adspend per land (ISO2 → €), o.b.v. de fysieke locatie van de klant.
+export async function fetchGoogleSpendByCountry(from: string, to: string, customerId?: string, loginCustomerId?: string): Promise<Record<string, number>> {
+  const cid = (customerId || "").replace(/-/g, "") || CUSTOMER_ID;
+  const login = (loginCustomerId || "").replace(/-/g, "") || LOGIN_CUSTOMER_ID;
+  const token = await getAccessToken();
+  const query =
+    `SELECT geographic_view.country_criterion_id, metrics.cost_micros FROM geographic_view ` +
+    `WHERE segments.date BETWEEN '${from}' AND '${to}' AND geographic_view.location_type = 'LOCATION_OF_PRESENCE'`;
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${token}`,
+    "developer-token": DEV_TOKEN as string,
+  };
+  if (login) headers["login-customer-id"] = login;
+
+  const res = await fetch(
+    `https://googleads.googleapis.com/${VERSION}/customers/${cid}/googleAds:searchStream`,
+    { method: "POST", headers, body: JSON.stringify({ query }), cache: "no-store" }
+  );
+  if (!res.ok) throw new Error(`Google Ads geo ${res.status}: ${(await res.text()).slice(0, 300)}`);
+
+  const data = await res.json();
+  const out: Record<string, number> = {};
+  const batches = Array.isArray(data) ? data : [data];
+  for (const b of batches) {
+    for (const row of b.results || []) {
+      const id = String(row.geographicView?.countryCriterionId ?? "");
+      const iso = GEO_ISO[id] || "??";
+      out[iso] = (out[iso] || 0) + Number(row.metrics?.costMicros || 0) / 1e6;
+    }
+  }
+  return out;
+}
