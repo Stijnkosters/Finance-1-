@@ -75,22 +75,29 @@ export async function fetchAdSpendByDay(from: string, to: string, customerId?: s
   return (await fetchGoogleStatsByDay(from, to, customerId, loginCustomerId)).spend;
 }
 
-// Geo-target-constant-ID → ISO2, voor de landen waar we op adverteren.
-const GEO_ISO: Record<string, string> = {
-  "2528": "NL", "2056": "BE", "2276": "DE", "2840": "US", "2250": "FR",
-  "2826": "GB", "2040": "AT", "2442": "LU", "2724": "ES", "2380": "IT",
-  "2372": "IE", "2752": "SE", "2208": "DK", "2616": "PL", "2620": "PT",
-  "2756": "CH", "2578": "NO", "2246": "FI",
-};
+// Bekende ISO2-landcodes waarop we adverteren (voor het herkennen in campagnenamen).
+const KNOWN_ISO = new Set(["NL", "BE", "DE", "US", "FR", "GB", "UK", "AT", "LU", "ES", "IT", "IE", "SE", "DK", "PL", "PT", "CH", "NO", "FI"]);
 
-// Google-adspend per land (ISO2 → €), o.b.v. de fysieke locatie van de klant.
+// Land uit de campagnenaam halen (1 land per campagne). Pakt het eerste losse
+// 2-letter-woord dat een bekende landcode is, bv. "NL NL | Pmax | FO | Dashcams" → NL.
+function countryFromCampaign(name: string): string {
+  for (const tok of String(name || "").split(/[^A-Za-z]+/)) {
+    const u = tok.toUpperCase();
+    if (u.length === 2 && KNOWN_ISO.has(u)) return u === "UK" ? "GB" : u;
+  }
+  return "??";
+}
+
+// Google-adspend per land (ISO2 → €), o.b.v. het land in de campagnenaam.
+// Zo telt élke euro mee (incl. PMax) en matcht het met hoe de campagnes
+// in Google zijn ingericht — i.p.v. de klikker-locatie (die PMax mist).
 export async function fetchGoogleSpendByCountry(from: string, to: string, customerId?: string, loginCustomerId?: string): Promise<Record<string, number>> {
   const cid = (customerId || "").replace(/-/g, "") || CUSTOMER_ID;
   const login = (loginCustomerId || "").replace(/-/g, "") || LOGIN_CUSTOMER_ID;
   const token = await getAccessToken();
   const query =
-    `SELECT geographic_view.country_criterion_id, metrics.cost_micros FROM geographic_view ` +
-    `WHERE segments.date BETWEEN '${from}' AND '${to}' AND geographic_view.location_type = 'LOCATION_OF_PRESENCE'`;
+    `SELECT campaign.name, metrics.cost_micros FROM campaign ` +
+    `WHERE segments.date BETWEEN '${from}' AND '${to}'`;
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -103,15 +110,14 @@ export async function fetchGoogleSpendByCountry(from: string, to: string, custom
     `https://googleads.googleapis.com/${VERSION}/customers/${cid}/googleAds:searchStream`,
     { method: "POST", headers, body: JSON.stringify({ query }), cache: "no-store" }
   );
-  if (!res.ok) throw new Error(`Google Ads geo ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  if (!res.ok) throw new Error(`Google Ads campaign-geo ${res.status}: ${(await res.text()).slice(0, 300)}`);
 
   const data = await res.json();
   const out: Record<string, number> = {};
   const batches = Array.isArray(data) ? data : [data];
   for (const b of batches) {
     for (const row of b.results || []) {
-      const id = String(row.geographicView?.countryCriterionId ?? "");
-      const iso = GEO_ISO[id] || "??";
+      const iso = countryFromCampaign(row.campaign?.name);
       out[iso] = (out[iso] || 0) + Number(row.metrics?.costMicros || 0) / 1e6;
     }
   }
