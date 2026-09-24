@@ -189,11 +189,14 @@ function finalizeCountries(byCountry: Record<string, CountryAgg>, adByCountry: R
     const marginPct = c.revenue > 0 ? round((contrib / c.revenue) * 100) : 0;
     const adspend = round(adByCountry[c.country] || 0);
     const roas = adspend > 0 ? round(c.revenue / adspend) : 0;
+    const netAfterAds = contrib - adspend;
+    const marginAfterAdsPct = c.revenue > 0 ? round((netAfterAds / c.revenue) * 100) : 0;
     return {
       country: c.country, orders: c.orders, units: c.units,
       revenue: round(c.revenue), cogs: round(c.cogs), refunds: round(c.refunds),
       fees: round(fees), contributionMargin: round(contrib),
       breakevenRoas, marginPct, adspend, roas,
+      netAfterAds: round(netAfterAds), marginAfterAdsPct,
       aov: c.orders > 0 ? round(c.revenue / c.orders) : 0,
     };
   }).sort((a, b) => b.revenue - a.revenue);
