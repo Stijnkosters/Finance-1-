@@ -697,10 +697,9 @@ export default function Dashboard() {
                     <div className="table-wrap">
                       <table className="table">
                         <thead><tr>
-                          <th>Land</th><th className="r">Orders</th><th className="r">AOV</th><th className="r">Omzet</th>
+                          <th>Land</th><th className="r">Orders</th><th className="r">AOV</th><th className="r">Revenue</th><th className="r">Google-spend</th><th className="r">ROAS</th>
                           <th className="r">COGS</th><th className="r">Refunds</th><th className="r">Fees</th>
-                          <th className="r">Dekkingsbijdrage</th><th className="r">Marge %</th><th className="r">Break-even ROAS</th>
-                          <th className="r">Google-spend</th><th className="r">ROAS</th><th className="r">Marge na ads %</th>
+                          <th className="r">Dekkingsbijdrage</th><th className="r">Marge %</th><th className="r">Marge na ads %</th><th className="r">Break-even ROAS</th>
                         </tr></thead>
                         <tbody>
                           {countries.map((c: any) => (
@@ -709,15 +708,15 @@ export default function Dashboard() {
                               <td className="r mono">{c.orders}</td>
                               <td className="r mono">{eur(c.aov)}</td>
                               <td className="r mono">{eur(c.revenue)}</td>
+                              <td className="r mono dim">{c.adspend ? eur(c.adspend) : "—"}</td>
+                              <td className={`r mono strong ${c.roas ? (c.roas >= c.breakevenRoas ? "green" : "red") : ""}`}>{c.roas ? numf(c.roas) : "—"}</td>
                               <td className="r mono">{eur(c.cogs)}</td>
                               <td className="r mono dim">{c.refunds ? eur(c.refunds) : "—"}</td>
                               <td className="r mono dim">{eur(c.fees)}</td>
                               <td className="r mono">{eur(c.contributionMargin)}</td>
                               <td className={`r mono ${c.marginPct >= 0 ? "green" : "red"}`}>{numf(c.marginPct, 1)}%</td>
-                              <td className="r mono strong">{c.breakevenRoas > 0 ? numf(c.breakevenRoas) : "—"}</td>
-                              <td className="r mono dim">{c.adspend ? eur(c.adspend) : "—"}</td>
-                              <td className={`r mono strong ${c.roas ? (c.roas >= c.breakevenRoas ? "green" : "red") : ""}`}>{c.roas ? numf(c.roas) : "—"}</td>
                               <td className={`r mono strong ${(c.marginAfterAdsPct || 0) >= 0 ? "green" : "red"}`}>{c.adspend ? `${numf(c.marginAfterAdsPct, 1)}%` : "—"}</td>
+                              <td className="r mono strong">{c.breakevenRoas > 0 ? numf(c.breakevenRoas) : "—"}</td>
                             </tr>
                           ))}
                         </tbody>
