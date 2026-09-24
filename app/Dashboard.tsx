@@ -697,9 +697,9 @@ export default function Dashboard() {
                     <div className="table-wrap">
                       <table className="table">
                         <thead><tr>
-                          <th>Land</th><th className="r">Orders</th><th className="r">AOV</th><th className="r">Revenue</th><th className="r">Google-spend</th><th className="r">ROAS</th>
+                          <th>Country</th><th className="r">Orders</th><th className="r">AOV</th><th className="r">Revenue</th><th className="r">Google-spend</th><th className="r">ROAS</th>
                           <th className="r">COGS</th><th className="r">Refunds</th><th className="r">Fees</th>
-                          <th className="r">Dekkingsbijdrage</th><th className="r">Marge %</th><th className="r">Marge na ads %</th><th className="r">Break-even ROAS</th>
+                          <th className="r">Contribution</th><th className="r">Margin %</th><th className="r">Margin after ads %</th><th className="r">Break-even ROAS</th>
                         </tr></thead>
                         <tbody>
                           {countries.map((c: any) => (
